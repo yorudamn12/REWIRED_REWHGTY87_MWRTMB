@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sharma General Store — Vendor Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="vendor">
+<div class="vendor-header">
+  Sharma General Store — Orders <span id="mockBadge" class="mock-badge hidden">MOCK MODE</span>
+  <div class="sub">ListLens vendor dashboard · updates every 2 seconds</div>
+</div>
+
+<div class="vendor-layout">
+  <!-- Left 60%: orders -->
+  <div class="orders-col" id="orders">
+    <div class="empty">No orders yet. Waiting for buyers to send their lists…</div>
+  </div>
+
+  <!-- Right 40%: live inventory -->
+  <div class="inventory-col">
+    <h2>📦 Live Inventory</h2>
+    <table class="data" id="inventoryTable">
+      <thead><tr><th>Item</th><th>Category</th><th class="num">Price</th><th class="num">Stock</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Click a thumbnail to see the full screenshot -->
+<div id="lightbox" class="lightbox hidden" onclick="this.classList.add('hidden')"><img id="lightboxImg" alt=""></div>
+
+<script>
+// ---------- State ----------
+let lastOrdersJson = "";   // re-draw orders only when something changed
+const rejectDrafts = {};   // orderId -> reason text being typed (kept across re-draws)
+const errors = {};         // orderId -> error message from the server
+let prevStock = null;      // itemId -> stock, to flash rows that changed
+
+const STATUS_LABELS = {
+  available: "Available", replaced: "Replaced", skipped: "Skipped",
+  not_found: "Not found", out_of_stock: "Out of stock",
+  reading: "Reading", awaiting_buyer: "Waiting for buyer", pending_vendor: "Needs your OK",
+  confirmed: "Confirmed", rejected: "Rejected", failed: "Failed",
+};
+
+fetch("/api/config").then(r => r.json()).then(cfg => {
+  if (cfg.mode === "mock") document.getElementById("mockBadge").classList.remove("hidden");
+});
+
+// Small helper to build an element: el("div", "className", "text")
+function el(tag, className, text) {
+  const e = document.createElement(tag);
+  if (className) e.className = className;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function badge(status) {
+  return el("span", "badge " + status, STATUS_LABELS[status] || status);
+}
+
+// ---------- Orders ----------
+async function loadOrders(force) {
+  const orders = await (await fetch("/api/vendor/orders")).json();
+  const json = JSON.stringify(orders);
+  if (json === lastOrdersJson && !force) return; // nothing new
+  lastOrdersJson = json;
+
+  const box = document.getElementById("orders");
+  box.innerHTML = "";
+  if (orders.length === 0) {
+    box.appendChild(el("div", "empty", "No orders yet. Waiting for buyers to send their lists…"));
+    return;
+  }
+  for (const o of orders) box.appendChild(renderOrder(o));
+}
+
+function renderOrder(o) {
+  const card = el("div", "order-card");
+
+  // Top: thumbnail + buyer info + status
+  const top = el("div", "order-top");
+  const img = document.createElement("img");
+  img.src = o.image_path;
+  img.title = "Click to enlarge";
+  img.onclick = () => {
+    document.getElementById("lightboxImg").src = o.image_path;
+    document.getElementById("lightbox").classList.remove("hidden");
+  };
+  top.appendChild(img);
+
+  const meta = el("div", "order-meta");
+  meta.appendChild(el("div", "name", `${o.buyer_name} · Flat ${o.flat}`));
+  meta.appendChild(el("div", "info", `Order #${o.id} · ${o.created_at.replace("T", " ").slice(0, 16)}`));
+  const st = el("div", "info");
+  st.appendChild(badge(o.status));
+  meta.appendChild(st);
+  top.appendChild(meta);
+  card.appendChild(top);
+
+  // Items table: what was written -> what we matched
+  const table = el("table", "data");
+  table.innerHTML = '<thead><tr><th>Written as → Matched item</th><th class="num">Qty</th><th class="num">₹</th><th>Status</th></tr></thead>';
+  const tbody = document.createElement("tbody");
+  for (const it of o.items) {
+    const tr = document.createElement("tr");
+    const nameCell = document.createElement("td");
+    nameCell.appendChild(el("span", "raw", `"${it.raw_text}"`));
+    nameCell.appendChild(document.createTextNode(" → " + (it.matched_name || "—")));
+    if (it.status === "replaced" && it.original_name) {
+      nameCell.appendChild(el("div", "raw", `instead of ${it.original_name}`));
+    }
+    tr.appendChild(nameCell);
+    tr.appendChild(el("td", "num", it.qty));
+    tr.appendChild(el("td", "num", it.price ? `₹${it.price}` : "—"));
+    const stCell = document.createElement("td");
+    stCell.appendChild(badge(it.status));
+    tr.appendChild(stCell);
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  card.appendChild(table);
+  card.appendChild(el("div", "order-total", `Total: ₹${o.total}`));
+
+  // Actions: only pending_vendor orders can be confirmed / rejected
+  const active = o.status === "pending_vendor";
+  const actions = el("div", "order-actions");
+  const confirmBtn = el("button", "btn-green", "✔ Confirm");
+  const rejectBtn = el("button", "btn-red", "✖ Reject");
+  confirmBtn.disabled = rejectBtn.disabled = !active;
+  confirmBtn.onclick = () => confirmOrder(o.id);
+  rejectBtn.onclick = () => { rejectDrafts[o.id] = rejectDrafts[o.id] || ""; loadOrders(true); };
+  actions.appendChild(confirmBtn);
+  actions.appendChild(rejectBtn);
+
+  // Inline reason box (instead of a browser prompt)
+  if (active && rejectDrafts[o.id] !== undefined) {
+    const rbox = el("div", "reject-box");
+    const input = document.createElement("input");
+    input.placeholder = "Reason, e.g. Shop closed today";
+    input.value = rejectDrafts[o.id];
+    input.oninput = () => rejectDrafts[o.id] = input.value;
+    const send = el("button", "btn-red", "Send rejection");
+    send.onclick = () => rejectOrder(o.id);
+    const cancel = el("button", "btn-green", "Cancel");
+    cancel.onclick = () => { delete rejectDrafts[o.id]; loadOrders(true); };
+    rbox.append(input, send, cancel);
+    actions.appendChild(rbox);
+    setTimeout(() => input.focus(), 0);
+  }
+  if (errors[o.id]) actions.appendChild(el("div", "error", "⚠ " + errors[o.id]));
+  card.appendChild(actions);
+  return card;
+}
+
+async function confirmOrder(id) {
+  const res = await fetch(`/api/vendor/orders/${id}/confirm`, { method: "POST" });
+  if (res.ok) delete errors[id];
+  else errors[id] = (await res.json()).detail; // e.g. "Not enough stock for ..."
+  await refresh(true);
+}
+
+async function rejectOrder(id) {
+  const res = await fetch(`/api/vendor/orders/${id}/reject`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason: rejectDrafts[id] || "" }),
+  });
+  if (res.ok) { delete errors[id]; delete rejectDrafts[id]; }
+  else errors[id] = (await res.json()).detail;
+  await refresh(true);
+}
+
+// ---------- Inventory ----------
+async function loadInventory() {
+  const items = await (await fetch("/api/inventory")).json();
+  const tbody = document.querySelector("#inventoryTable tbody");
+  tbody.innerHTML = "";
+  for (const it of items) {
+    const tr = document.createElement("tr");
+    if (it.stock <= 3) tr.classList.add("low");                       // low stock -> red
+    if (prevStock && prevStock[it.id] !== it.stock) tr.classList.add("flash"); // changed -> flash
+    tr.appendChild(el("td", "", it.name));
+    tr.appendChild(el("td", "", it.category.replace("_", " ")));
+    tr.appendChild(el("td", "num", `₹${it.price}`));
+    tr.appendChild(el("td", "num", it.stock));
+    tbody.appendChild(tr);
+  }
+  prevStock = Object.fromEntries(items.map(i => [i.id, i.stock]));
+}
+
+// ---------- Poll every 2 seconds ----------
+async function refresh(force) {
+  await Promise.all([loadOrders(force), loadInventory()]);
+}
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
