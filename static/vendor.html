@@ -402,6 +402,9 @@ function renderChatMsg(m) {
       body.appendChild(el("div", label === p.chosen ? "cm-opt chosen" : "cm-opt", (label === p.chosen ? "✓ " : "○ ") + label));
     }
     if (!p.chosen) body.appendChild(el("i", "", "Customer has not answered yet"));
+  } else if (m.type === "list") {
+    body.appendChild(el("div", "", p.text));
+    if (p.chosen) body.appendChild(el("div", "cm-opt chosen", "✓ " + p.chosen));
   }
   row.appendChild(body);
   return row;

@@ -60,10 +60,55 @@ BLOCKS = ["A", "B", "C", "D", "E", "F"]
 UNITS = ["pkt", "pouch", "box", "bottle", "bag", "jar", "tube", "piece", "kg", "L"]
 
 
+# What the ListLens bot says while getting to know a new customer.
+# The chat page shows these live; /api/onboard saves the same words in the chat history.
+ONBOARDING = {
+    "ask_name": "👋 Hi! Welcome to ListLens.\nI take your grocery list to Sharma General Store.\n\nWhat's your name?",
+    "ask_society": "Nice to meet you, {name}! 😊\nWhich society do you live in?",
+    "ask_block": "Which block are you in?",
+    "ask_flat": "And your flat number? (for example 204)",
+    "done": "All set ✅\nWe'll deliver to Flat {flat}, Block {block}, {society}.\n\n📷 Now send a photo or screenshot of your grocery list.",
+}
+
+
 @app.get("/api/config")
 def config():
     return {"mode": ai.AI_MODE, "societies": SOCIETIES, "blocks": BLOCKS,
-            "categories": ai.CATEGORIES, "units": UNITS, "low_stock": logic.LOW_STOCK}
+            "categories": ai.CATEGORIES, "units": UNITS, "low_stock": logic.LOW_STOCK,
+            "onboarding": ONBOARDING}
+
+
+class OnboardBody(BaseModel):
+    name: str
+    society: str
+    block: str
+    flat: str
+
+
+@app.post("/api/onboard")
+def onboard(body: OnboardBody):
+    """A new customer finished answering the bot's questions in the chat.
+    Save that question-and-answer chat so it stays after a reload (and the vendor can see it)."""
+    name, flat = body.name.strip(), body.flat.strip()
+    if not name or not flat:
+        raise HTTPException(400, "Name and flat are required")
+    if body.society not in SOCIETIES or body.block not in BLOCKS:
+        raise HTTPException(400, "Unknown society or block")
+    conn = get_conn()
+    bot_text(conn, name, ONBOARDING["ask_name"])
+    add_message(conn, name, "buyer", "text", {"text": name})
+    add_message(conn, name, "bot", "list", {"text": ONBOARDING["ask_society"].format(name=name),
+                                            "button": "Choose society", "options": SOCIETIES, "chosen": body.society})
+    add_message(conn, name, "buyer", "text", {"text": body.society})
+    add_message(conn, name, "bot", "list", {"text": ONBOARDING["ask_block"], "button": "Choose block",
+                                            "options": [f"Block {b}" for b in BLOCKS], "chosen": f"Block {body.block}"})
+    add_message(conn, name, "buyer", "text", {"text": f"Block {body.block}"})
+    bot_text(conn, name, ONBOARDING["ask_flat"])
+    add_message(conn, name, "buyer", "text", {"text": flat})
+    bot_text(conn, name, ONBOARDING["done"].format(flat=flat, block=body.block, society=body.society))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
 
 # ---------- Buyer side ----------

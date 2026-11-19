@@ -19,38 +19,34 @@
       <div class="title">ListLens</div>
       <div class="sub"><span id="headerSub">online</span> · Sharma General Store<span id="mockBadge" class="mock-badge hidden">MOCK MODE</span></div>
     </div>
-    <button class="icon-btn" title="Menu">
+    <button class="icon-btn" id="menuBtn" title="Menu">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
     </button>
   </div>
 
-  <!-- First-time form: name, society, block, flat (saved in localStorage) -->
-  <form id="signup" class="signup hidden">
-    <h3 style="margin:0">Welcome to ListLens! 👋</h3>
-    <div class="note">We pass your grocery list to Sharma General Store. First, tell us who you are and where to deliver.</div>
-    <label>Your name
-      <input id="nameInput" placeholder="e.g. Priya Sharma" required>
-    </label>
-    <label>Society
-      <select id="societyInput" required>
-        <option value="">Select your society</option>
-      </select>
-    </label>
-    <div class="two-cols">
-      <label>Block
-        <select id="blockInput" required>
-          <option value="">Block</option>
-        </select>
-      </label>
-      <label>Flat number
-        <input id="flatInput" placeholder="e.g. 204" required>
-      </label>
+  <!-- Small menu under the ⋮ button -->
+  <div id="menu" class="menu hidden">
+    <button id="changeDetails">✏️ Change my name / address</button>
+  </div>
+
+  <!-- List picker (like a chat-app "list message"): used for society and block -->
+  <div id="picker" class="picker hidden">
+    <div class="picker-sheet">
+      <div class="picker-head">
+        <button class="icon-btn" id="pickerClose" title="Close">
+          <svg viewBox="0 0 24 24"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
+        </button>
+        <span id="pickerTitle">Choose</span>
+      </div>
+      <div id="pickerList" class="picker-list"></div>
+      <div class="picker-foot">
+        <button class="round-btn green" id="pickerSend" title="Send" disabled></button>
+      </div>
     </div>
-    <button class="btn-pill" type="submit">Start chatting</button>
-  </form>
+  </div>
 
   <!-- Chat messages -->
-  <div id="messages" class="messages hidden">
+  <div id="messages" class="messages">
     <div class="chip">Today</div>
     <div class="chip info">🔍 ListLens connects you with Sharma General Store. Send a photo or screenshot of your grocery list and we'll check stock for you. The store owner can join this chat if needed.</div>
   </div>
@@ -72,7 +68,7 @@
   <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
 
   <!-- Bottom bar: emoji, text box, paperclip, camera + round mic/send button -->
-  <form id="bottomBar" class="bottom-bar hidden">
+  <form id="bottomBar" class="bottom-bar">
     <div class="input-pill">
       <span class="icon-btn">
         <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm-3.5-9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm7 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM12 17.5c2.3 0 4.3-1.5 5-3.5H7c.7 2 2.7 3.5 5 3.5z"/></svg>
@@ -108,6 +104,7 @@
 const ICON_SEND = '<svg viewBox="0 0 24 24"><path d="M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z"/></svg>';
 const ICON_MIC = '<svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5.3-3a5.3 5.3 0 0 1-10.6 0H5a7 7 0 0 0 6 6.9V21h2v-3.1a7 7 0 0 0 6-6.9z"/></svg>';
 const ICON_REPLY = '<svg viewBox="0 0 24 24"><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"/></svg>';
+const ICON_LIST = '<svg viewBox="0 0 24 24"><path d="M3 5h2v2H3zm4 0h14v2H7zM3 11h2v2H3zm4 0h14v2H7zm-4 6h2v2H3zm4 0h14v2H7z"/></svg>';
 const TICKS = '<svg viewBox="0 0 16 11"><path d="M1 6l3 3 6-7M6.5 9.5l.8.8L14 2" fill="none" stroke="#53bdeb" stroke-width="1.6"/></svg>';
 
 // ---------- State ----------
@@ -117,41 +114,184 @@ let lastId = 0;          // id of the last message shown
 let lastSender = null;   // draw the bubble "tail" only on the first bubble of a group
 let typingEl = null;     // typing bubble shown while the list is being read
 let pickedFile = null;   // photo chosen from gallery/camera, waiting to be sent
+let cfg = null;          // settings from the server (societies, blocks, bot questions)
+let onboarding = null;   // while getting to know a new customer: {step, name, society, block}
 
 const $ = (id) => document.getElementById(id);
 const messagesEl = $("messages");
 const textInput = $("textInput");
 const roundBtn = $("roundBtn");
 $("sendImageBtn").innerHTML = ICON_SEND;
+$("pickerSend").innerHTML = ICON_SEND;
 
-// Settings from the server: mock badge + society/block dropdown options
-fetch("/api/config").then(r => r.json()).then(cfg => {
+// Load settings, then start: returning customers go straight to their chat,
+// new customers are asked their details by the bot, inside the chat.
+fetch("/api/config").then(r => r.json()).then(c => {
+  cfg = c;
   if (cfg.mode === "mock") $("mockBadge").classList.remove("hidden");
-  for (const s of cfg.societies) $("societyInput").add(new Option(s, s));
-  for (const b of cfg.blocks) $("blockInput").add(new Option("Block " + b, b));
-});
-
-// ---------- Sign up (first time only) ----------
-$("signup").addEventListener("submit", (e) => {
-  e.preventDefault();
-  buyer = {
-    name: $("nameInput").value.trim(),
-    society: $("societyInput").value,
-    block: $("blockInput").value,
-    flat: $("flatInput").value.trim(),
-  };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(buyer));
-  startChat();
-});
-
-function startChat() {
-  $("signup").classList.add("hidden");
-  messagesEl.classList.remove("hidden");
-  $("bottomBar").classList.remove("hidden");
   updateRoundButton();
+  if (buyer) startPolling();
+  else startOnboarding();
+});
+
+function startPolling() {
+  setAttachEnabled(true);
   poll();
   setInterval(poll, 2000); // check for new messages every 2 seconds
 }
+
+// ---------- Onboarding: the bot asks name, society, block, flat ----------
+function startOnboarding() {
+  onboarding = { step: "name" };
+  setAttachEnabled(false); // no photos until we know where to deliver
+  textInput.placeholder = "Type your name";
+  botSays({ type: "text", payload: { text: cfg.onboarding.ask_name } });
+}
+
+// Handle what the customer typed (or picked from a list) for the current question
+function handleOnboardingAnswer(answer) {
+  const o = onboarding;
+  answer = answer.trim();
+  if (!answer) return;
+  // Older "Choose ..." buttons can't be used again once an answer is given
+  messagesEl.querySelectorAll(".row.local .choice-buttons").forEach(b => {
+    b.classList.add("answered");
+    b.querySelectorAll("button").forEach(btn => btn.classList.add("picked")); // grey them out
+  });
+
+  if (o.step === "name") {
+    if (answer.length < 2 || answer.length > 40) return botHint("Please type your name (2 to 40 letters).");
+    showLocal("buyer", { text: answer });
+    o.name = answer;
+    o.step = "society";
+    textInput.placeholder = "Type or choose your society";
+    botSays({ type: "list", payload: { text: cfg.onboarding.ask_society.replace("{name}", answer),
+                                        button: "Choose society", options: cfg.societies, chosen: null } });
+
+  } else if (o.step === "society") {
+    // Accept a typed name too, e.g. "lakeview" -> "Lakeview Residency"
+    const match = cfg.societies.find(s => s.toLowerCase().includes(answer.toLowerCase()));
+    showLocal("buyer", { text: match || answer });
+    if (!match) return botAskAgain("Sorry, we don't deliver there yet. Please choose your society from the list 👇",
+                                   "Choose society", cfg.societies);
+    o.society = match;
+    o.step = "block";
+    textInput.placeholder = "Type or choose your block";
+    botSays({ type: "list", payload: { text: cfg.onboarding.ask_block, button: "Choose block",
+                                        options: cfg.blocks.map(b => "Block " + b), chosen: null } });
+
+  } else if (o.step === "block") {
+    // Accept "C", "c", "block c" or the list choice "Block C"
+    const letter = answer.replace(/block/i, "").trim().toUpperCase();
+    showLocal("buyer", { text: cfg.blocks.includes(letter) ? "Block " + letter : answer });
+    if (!cfg.blocks.includes(letter)) return botAskAgain("Please choose your block 👇", "Choose block",
+                                                         cfg.blocks.map(b => "Block " + b));
+    o.block = letter;
+    o.step = "flat";
+    textInput.placeholder = "Type your flat number";
+    botSays({ type: "text", payload: { text: cfg.onboarding.ask_flat } });
+
+  } else if (o.step === "flat") {
+    showLocal("buyer", { text: answer });
+    if (!/^[A-Za-z0-9\-\/]{1,8}$/.test(answer)) return botHint("Please type just the flat number, like 204 or G-3.");
+    o.flat = answer;
+    o.step = "saving";
+    finishOnboarding();
+  }
+}
+
+async function finishOnboarding() {
+  const o = onboarding;
+  const res = await fetch("/api/onboard", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: o.name, society: o.society, block: o.block, flat: o.flat }),
+  });
+  if (!res.ok) { o.step = "flat"; return botHint("Something went wrong. Please type your flat number again."); }
+
+  buyer = { name: o.name, society: o.society, block: o.block, flat: o.flat };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(buyer));
+  onboarding = null;
+  textInput.placeholder = "Message";
+
+  // Swap the temporary bubbles for the saved chat (same words, now stored on the server)
+  messagesEl.querySelectorAll(".row.local").forEach(r => r.remove());
+  lastSender = null;
+  startPolling();
+}
+
+// Show a bubble only on this screen (not saved yet)
+function showLocal(sender, payload, type = "text") {
+  const time = new Date().toTimeString().slice(0, 5);
+  const row = renderMessage({ sender, type, payload, created_at: "0000-00-00T" + time });
+  row.classList.add("local");
+  scrollDown();
+}
+
+// Bot "types" for a moment, then shows its message
+function botSays(msg) {
+  $("headerSub").textContent = "typing…";
+  const dots = document.createElement("div");
+  dots.className = "row bot first local";
+  dots.innerHTML = '<div class="bubble bot"><span class="typing-dots"><span></span><span></span><span></span></span></div>';
+  messagesEl.appendChild(dots);
+  scrollDown();
+  setTimeout(() => {
+    dots.remove();
+    $("headerSub").textContent = "online";
+    lastSender = null;
+    showLocal("bot", msg.payload, msg.type);
+  }, 700);
+}
+function botHint(text) { botSays({ type: "text", payload: { text } }); }
+function botAskAgain(text, button, options) {
+  botSays({ type: "list", payload: { text, button, options, chosen: null } });
+}
+
+// Photos are only allowed once we know who and where the customer is
+function setAttachEnabled(on) {
+  $("clipBtn").classList.toggle("hidden", !on);
+  $("camBtn").classList.toggle("hidden", !on);
+}
+
+// ---------- List picker sheet ----------
+let pickerChoice = null;
+let pickerDone = null;   // callback when the customer presses send
+
+function openPicker(title, options, onDone) {
+  $("pickerTitle").textContent = title;
+  pickerChoice = null;
+  pickerDone = onDone;
+  $("pickerSend").disabled = true;
+  const list = $("pickerList");
+  list.innerHTML = "";
+  for (const opt of options) {
+    const row = document.createElement("button");
+    row.className = "picker-option";
+    row.innerHTML = '<span class="opt-text"></span><span class="radio"></span>';
+    row.firstChild.textContent = opt;
+    row.onclick = () => {
+      list.querySelectorAll(".picker-option").forEach(r => r.classList.remove("selected"));
+      row.classList.add("selected");
+      pickerChoice = opt;
+      $("pickerSend").disabled = false;
+    };
+    list.appendChild(row);
+  }
+  $("picker").classList.remove("hidden");
+}
+function closePicker() { $("picker").classList.add("hidden"); }
+$("pickerClose").onclick = closePicker;
+$("picker").onclick = (e) => { if (e.target.id === "picker") closePicker(); }; // tap outside to close
+$("pickerSend").onclick = () => { closePicker(); if (pickerChoice && pickerDone) pickerDone(pickerChoice); };
+
+// ---------- Menu: change details ----------
+$("menuBtn").onclick = () => $("menu").classList.toggle("hidden");
+$("changeDetails").onclick = () => {
+  if (!confirm("Change your name or delivery address? You'll be asked again in the chat.")) return;
+  localStorage.removeItem(STORAGE_KEY);
+  location.reload();
+};
 
 // ---------- Polling ----------
 async function poll() {
@@ -199,21 +339,45 @@ function renderMessage(m) {
     renderSummary(bubble, p);
   } else if (m.type === "choice") {
     renderChoice(bubble, p);
+  } else if (m.type === "list") {
+    renderList(bubble, p);
   }
 
   // Time (e.g. 13:02) + blue ticks on the buyer's own messages
   const meta = document.createElement("span");
   meta.className = "meta";
   meta.innerHTML = m.created_at.slice(11, 16) + (m.sender === "buyer" ? TICKS : "");
-  if (m.type === "choice") bubble.insertBefore(meta, bubble.querySelector(".choice-buttons"));
+  const buttons = bubble.querySelector(".choice-buttons");
+  if (buttons) bubble.insertBefore(meta, buttons);
   else bubble.appendChild(meta);
 
   row.appendChild(bubble);
   messagesEl.appendChild(row);
 
   // If the store owner just asked something, invite the customer to answer
-  textInput.placeholder = m.sender === "vendor" ? "Reply to Sharma General Store…" : "Message";
+  if (!onboarding) textInput.placeholder = m.sender === "vendor" ? "Reply to Sharma General Store…" : "Message";
   if (typingEl) messagesEl.appendChild(typingEl); // keep the typing bubble at the bottom
+  return row;
+}
+
+// List message: text + one "☰ Choose ..." button that opens the picker sheet
+function renderList(bubble, p) {
+  bubble.classList.add("choice-bubble");
+  bubble.appendChild(document.createTextNode(p.text));
+  const box = document.createElement("div");
+  box.className = "choice-buttons";
+  const btn = document.createElement("button");
+  btn.innerHTML = ICON_LIST;
+  btn.appendChild(document.createTextNode(p.button));
+  if (p.chosen || !onboarding) btn.classList.add("picked"); // already answered (saved chat)
+  if (p.chosen || !onboarding) box.classList.add("answered");
+  btn.onclick = () => openPicker(p.button, p.options, (value) => {
+    box.classList.add("answered");
+    btn.classList.add("picked");
+    handleOnboardingAnswer(value);
+  });
+  box.appendChild(btn);
+  bubble.appendChild(box);
 }
 
 function renderQuote(q) {
@@ -300,6 +464,12 @@ textInput.addEventListener("input", updateRoundButton);
 $("bottomBar").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = textInput.value.trim();
+  if (onboarding) {                      // still answering the bot's questions
+    textInput.value = "";
+    updateRoundButton();
+    handleOnboardingAnswer(text);
+    return;
+  }
   if (!text) { toggleSheet(); return; } // mic tapped: offer the photo options instead
   textInput.value = "";
   updateRoundButton();
@@ -317,7 +487,10 @@ $("clipBtn").onclick = toggleSheet;
 $("camBtn").onclick = () => $("cameraInput").click();
 $("galleryBtn").onclick = () => { toggleSheet(); $("galleryInput").click(); };
 $("cameraBtn").onclick = () => { toggleSheet(); $("cameraInput").click(); };
-messagesEl.addEventListener("click", () => $("attachSheet").classList.add("hidden"));
+messagesEl.addEventListener("click", () => {
+  $("attachSheet").classList.add("hidden");
+  $("menu").classList.add("hidden");
+});
 
 function onPicked(input) {
   pickedFile = input.files[0];
@@ -360,9 +533,6 @@ async function uploadImage(file) {
   await poll();
 }
 
-// ---------- Start ----------
-if (buyer) startChat();
-else $("signup").classList.remove("hidden");
 </script>
 </body>
 </html>
