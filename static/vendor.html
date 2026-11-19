@@ -5,85 +5,185 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sharma General Store — Vendor Dashboard</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/vendor.css">
 </head>
 <body class="vendor">
-<div class="vendor-header">
-  <div class="store-logo">SG</div>
-  <div>
-    <div class="h-title">Sharma General Store <span id="mockBadge" class="mock-badge hidden">MOCK MODE</span></div>
-    <div class="h-sub">Vendor dashboard · orders arrive through ListLens</div>
-  </div>
-  <div class="live">
-    <a class="alerts-link" href="/vendor-chat" target="_blank">📱 Phone alerts ↗</a>
-    <span class="live-dot"></span>Live · updates every 2s
-  </div>
-</div>
+<div class="shell">
 
-<!-- Tabs -->
-<div class="tabs">
-  <button class="tab active" data-tab="ordersTab">🧾 Customer Orders <span id="pendingCount" class="count hidden"></span></button>
-  <button class="tab" data-tab="inventoryTab">📦 Inventory <span id="lowCount" class="count warn hidden"></span></button>
-</div>
-
-<!-- ===================== Tab 1: Orders ===================== -->
-<div id="ordersTab" class="tab-page">
-  <!-- Quick numbers across the top -->
-  <div class="stats">
-    <div class="stat blue"><div class="stat-num" id="statPending">0</div><div class="stat-label">Need your OK</div></div>
-    <div class="stat purple"><div class="stat-num" id="statWaiting">0</div><div class="stat-label">Waiting for customer reply</div></div>
-    <div class="stat green"><div class="stat-num" id="statConfirmed">0</div><div class="stat-label">Confirmed today</div></div>
-    <div class="stat dark"><div class="stat-num" id="statSales">₹0</div><div class="stat-label">Today's confirmed sales</div></div>
-    <div class="stat amber clickable" id="statLowBox"><div class="stat-num" id="statLow">0</div><div class="stat-label">Items low / out of stock ›</div></div>
-  </div>
-  <div class="orders-grid" id="orders">
-    <div class="empty">No orders yet. Waiting for buyers to send their lists…</div>
-  </div>
-</div>
-
-<!-- ===================== Tab 2: Inventory ===================== -->
-<div id="inventoryTab" class="tab-page hidden">
-  <!-- Quick add -->
-  <div class="panel">
-    <div class="panel-head">
-      <h2>📦 QUICK ADD SKU TO LIVE STORE INVENTORY</h2>
-      <span class="mono hint">SKU code is created automatically</span>
-    </div>
-    <form id="addForm" class="add-form">
-      <input id="newName" placeholder="Product name (e.g. MDH Haldi 100g)" required>
-      <input id="newHindi" placeholder="Hindi name (optional, e.g. हल्दी)">
-      <select id="newCategory" required></select>
-      <select id="newUnit" required></select>
-      <input id="newPrice" type="number" min="1" step="0.5" placeholder="Price ₹" required>
-      <input id="newStock" type="number" min="0" step="1" placeholder="Stock" required>
-      <button class="btn-dark" type="submit">＋ Add Item</button>
-    </form>
-    <div id="addMsg" class="form-msg"></div>
-  </div>
-
-  <!-- Filters + inventory table -->
-  <div class="panel">
-    <div class="toolbar">
-      <input id="search" class="search" placeholder="🔍 Filter by SKU, product name, or Hindi term…">
-      <select id="catFilter"><option value="">All Categories</option></select>
-      <div class="toolbar-right">
-        <button id="lowToggle" class="btn-outline mono">↘ Low Stock Only (<span id="lowNum">0</span>)</button>
-        <span class="mono">Total: <b id="totalSkus">0</b> SKUs</span>
-        <span id="outBadge" class="out-badge mono hidden"></span>
+  <!-- ===================== Sidebar ===================== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">SG</div>
+      <div>
+        <div class="brand-name">Sharma Store</div>
+        <div class="brand-sub">orders via ListLens</div>
       </div>
     </div>
-    <table class="data inv-table" id="inventoryTable">
-      <thead>
-        <tr>
-          <th class="mono">SKU Code</th><th class="mono">Product Description</th><th class="mono">Category</th>
-          <th class="mono num">Price (₹)</th><th class="mono center">Current Stock</th><th class="mono center">Status</th>
-          <th class="mono center">Quick Restock</th><th></th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-    <div id="invEmpty" class="empty hidden">No items match your filter.</div>
-    <div id="invError" class="error"></div>
-  </div>
+
+    <div class="nav-label">Main</div>
+    <button class="nav-item tab active" data-tab="ordersTab">
+      <svg class="i" viewBox="0 0 24 24"><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H6.2"/><circle cx="9" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/></svg>
+      Orders <span id="pendingCount" class="count hidden"></span>
+    </button>
+    <button class="nav-item tab" data-tab="inventoryTab">
+      <svg class="i" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg>
+      Inventory <span id="lowCount" class="count warn hidden"></span>
+    </button>
+
+    <div class="nav-label">Other</div>
+    <a class="nav-item" href="/vendor-chat" target="_blank">
+      <svg class="i" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/></svg>
+      Phone alerts ↗
+    </a>
+    <a class="nav-item" href="/" target="_blank">
+      <svg class="i" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>
+      Customer chat ↗
+    </a>
+
+    <div class="side-card">
+      <div class="side-card-title"><span class="live-dot"></span>Live updates</div>
+      <div class="side-card-text">This page refreshes every 2 seconds. New orders also ping your phone alerts chat.</div>
+      <a class="btn-green block" href="/vendor-chat" target="_blank">Open phone alerts</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- ===================== Top bar ===================== -->
+    <header class="topbar">
+      <div>
+        <h1 id="pageTitle">Order Management</h1>
+        <div class="page-sub" id="pageSub">Orders from ListLens chats, live. Confirm, reject, or step into the chat.</div>
+      </div>
+      <div class="topbar-right">
+        <span id="mockBadge" class="mock-badge hidden">MOCK MODE</span>
+        <a class="bell" href="/vendor-chat" target="_blank" title="Phone alerts">
+          <svg class="i" viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+          <span id="bellDot" class="bell-dot hidden"></span>
+        </a>
+        <div class="user">
+          <div class="user-avatar">SG</div>
+          <div>
+            <div class="user-name">Store Owner</div>
+            <div class="user-sub">Sharma General Store</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ===================== Tab 1: Orders ===================== -->
+    <div id="ordersTab" class="tab-page">
+      <div class="stat-cards">
+        <div class="stat-card">
+          <div><div class="stat-label">Need your OK</div><div class="stat-num" id="statPending">0</div></div>
+          <div class="stat-icon ic-blue"><svg class="i" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/></svg></div>
+        </div>
+        <div class="stat-card">
+          <div><div class="stat-label">Waiting for customer reply</div><div class="stat-num" id="statWaiting">0</div></div>
+          <div class="stat-icon ic-purple"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></div>
+        </div>
+        <div class="stat-card">
+          <div><div class="stat-label">Confirmed today</div><div class="stat-num" id="statConfirmed">0</div></div>
+          <div class="stat-icon ic-green"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8 12.5l2.7 2.7L16 10"/></svg></div>
+        </div>
+        <div class="stat-card">
+          <div><div class="stat-label">Today's confirmed sales</div><div class="stat-num" id="statSales">₹0</div></div>
+          <div class="stat-icon ic-amber">₹</div>
+        </div>
+        <div class="stat-card clickable" id="statLowBox" title="Show these items in Inventory">
+          <div><div class="stat-label">Items low / out of stock ›</div><div class="stat-num" id="statLow">0</div></div>
+          <div class="stat-icon ic-red"><svg class="i" viewBox="0 0 24 24"><path d="M12 3.5l9 16H3z"/><path d="M12 10v4.5M12 17.5v.3"/></svg></div>
+        </div>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Orders List</h2>
+          <div class="search-box">
+            <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>
+            <input id="orderSearch" placeholder="Search name, flat, society or order #…">
+          </div>
+        </div>
+        <div class="pills" id="orderPills">
+          <button class="pill active" data-f="all">All Orders</button>
+          <button class="pill" data-f="pending_vendor">Needs your OK</button>
+          <button class="pill" data-f="waiting_customer">Waiting for reply</button>
+          <button class="pill" data-f="confirmed">Confirmed</button>
+          <button class="pill" data-f="rejected">Rejected</button>
+        </div>
+        <div class="orders-grid" id="orders"></div>
+      </section>
+    </div>
+
+    <!-- ===================== Tab 2: Inventory ===================== -->
+    <div id="inventoryTab" class="tab-page hidden">
+      <div class="stat-cards">
+        <div class="stat-card">
+          <div><div class="stat-label">Total Products</div><div class="stat-num" id="invTotal">0</div></div>
+          <div class="stat-icon ic-blue"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg></div>
+        </div>
+        <div class="stat-card">
+          <div><div class="stat-label">Low Stock (≤ <span id="lowLimit">5</span>)</div><div class="stat-num" id="invLow">0</div></div>
+          <div class="stat-icon ic-red"><svg class="i" viewBox="0 0 24 24"><path d="M12 3.5l9 16H3z"/><path d="M12 10v4.5M12 17.5v.3"/></svg></div>
+        </div>
+        <div class="stat-card">
+          <div><div class="stat-label">Out Of Stock</div><div class="stat-num" id="invOut">0</div></div>
+          <div class="stat-icon ic-purple"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7"/></svg></div>
+        </div>
+        <div class="stat-card">
+          <div><div class="stat-label">Categories</div><div class="stat-num" id="invCats">0</div></div>
+          <div class="stat-icon ic-green"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg></div>
+        </div>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Product Inventory</h2>
+          <button class="btn-green" id="addToggle">＋ Add Item</button>
+        </div>
+
+        <!-- Quick add form (opens with "+ Add Item"). The SKU code is created automatically. -->
+        <form id="addForm" class="add-form hidden">
+          <input id="newName" placeholder="Product name (e.g. MDH Haldi 100g)" required>
+          <input id="newHindi" placeholder="Hindi name (optional, e.g. हल्दी)">
+          <select id="newCategory" required></select>
+          <select id="newUnit" required></select>
+          <input id="newPrice" type="number" min="1" step="0.5" placeholder="Price ₹" required>
+          <input id="newStock" type="number" min="0" step="1" placeholder="Stock" required>
+          <button class="btn-green" type="submit">Save item</button>
+        </form>
+        <div id="addMsg" class="form-msg"></div>
+
+        <!-- Filters -->
+        <div class="card-tools">
+          <div class="pills" id="stockPills">
+            <button class="pill active" data-f="all">All Products</button>
+            <button class="pill" data-f="in">In Stock</button>
+            <button class="pill" data-f="low">Low Stock <span class="n" id="pillLow"></span></button>
+            <button class="pill" data-f="out">Out Of Stock <span class="n" id="pillOut"></span></button>
+          </div>
+          <div class="tools-right">
+            <select id="catFilter" class="select"><option value="">All Categories</option></select>
+            <div class="search-box">
+              <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>
+              <input id="search" placeholder="Search SKU, name or Hindi…">
+            </div>
+          </div>
+        </div>
+
+        <table class="data inv-table" id="inventoryTable">
+          <thead>
+            <tr>
+              <th>Product Name</th><th>Category</th><th class="num">Price (₹)</th>
+              <th>Stock Level</th><th class="center">Status</th><th class="center">Quick Restock</th><th class="center">Action</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div id="invEmpty" class="empty hidden">No items match your filter.</div>
+        <div id="invError" class="error"></div>
+      </section>
+    </div>
+  </main>
 </div>
 
 <!-- Chat drawer: vendor reads the ListLens chat and can step in -->
@@ -113,7 +213,8 @@ const errors = {};         // orderId -> error message from the server
 let inventory = [];        // latest inventory from the server
 let prevStock = null;      // itemId -> stock, to flash rows that changed
 let lastInvJson = "";      // re-draw inventory only when something changed
-let lowOnly = false;       // "Low Stock Only" toggle
+let stockFilter = "all";   // inventory pill: all | in | low | out
+let orderFilter = "all";   // orders pill: all | pending_vendor | waiting_customer | confirmed | rejected
 let LOW_STOCK = 5;         // from /api/config
 let chatBuyer = null;      // whose chat is open in the drawer
 let chatOrderId = null;    // the order the drawer was opened from
@@ -165,6 +266,7 @@ async function postJson(url, body, method = "POST") {
 fetch("/api/config").then(r => r.json()).then(cfg => {
   if (cfg.mode === "mock") $("mockBadge").classList.remove("hidden");
   LOW_STOCK = cfg.low_stock;
+  $("lowLimit").textContent = LOW_STOCK;
   for (const c of cfg.categories) {
     $("newCategory").add(new Option(CAT_LABELS[c] || c, c));
     $("catFilter").add(new Option(CAT_LABELS[c] || c, c));
@@ -172,13 +274,35 @@ fetch("/api/config").then(r => r.json()).then(cfg => {
   for (const u of cfg.units) $("newUnit").add(new Option(UNIT_LABELS[u] || u, u));
 });
 
-// ---------- Tabs ----------
+// ---------- Tabs (sidebar) ----------
+const PAGE_TEXT = {
+  ordersTab: ["Order Management", "Orders from ListLens chats, live. Confirm, reject, or step into the chat."],
+  inventoryTab: ["Inventory Management", "Monitor stock levels and manage your products."],
+};
 function showTab(id) {
   document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === id));
   document.querySelectorAll(".tab-page").forEach(p => p.classList.toggle("hidden", p.id !== id));
+  $("pageTitle").textContent = PAGE_TEXT[id][0];
+  $("pageSub").textContent = PAGE_TEXT[id][1];
 }
 document.querySelectorAll(".tab").forEach(btn => btn.onclick = () => showTab(btn.dataset.tab));
-$("statLowBox").onclick = () => { lowOnly = true; drawInventory(true); showTab("inventoryTab"); };
+
+// Pill filters: mark the clicked pill active and remember its value
+function setupPills(boxId, onPick) {
+  document.querySelectorAll(`#${boxId} .pill`).forEach(p => p.onclick = () => {
+    document.querySelectorAll(`#${boxId} .pill`).forEach(x => x.classList.toggle("active", x === p));
+    onPick(p.dataset.f);
+  });
+}
+function selectPill(boxId, value) {
+  document.querySelectorAll(`#${boxId} .pill`).forEach(x => x.classList.toggle("active", x.dataset.f === value));
+}
+setupPills("orderPills", f => { orderFilter = f; loadOrders(true); });
+setupPills("stockPills", f => { stockFilter = f; drawInventory(true); });
+$("orderSearch").oninput = () => loadOrders(true);
+
+// "Items low / out of stock" card jumps to Inventory with the Low Stock filter on
+$("statLowBox").onclick = () => { stockFilter = "low"; selectPill("stockPills", "low"); drawInventory(true); showTab("inventoryTab"); };
 
 // =====================================================================
 // ORDERS
@@ -191,13 +315,21 @@ async function loadOrders(force) {
   if (json === lastOrdersJson && !force) return; // nothing new
   lastOrdersJson = json;
 
+  // Apply the pill filter and the search box
+  const q = $("orderSearch").value.trim().toLowerCase();
+  const shown = orders.filter(o =>
+    (orderFilter === "all" || o.status === orderFilter) &&
+    (!q || [o.buyer_name, o.flat, o.block, o.society, "#" + o.id].join(" ").toLowerCase().includes(q))
+  );
+
   const box = $("orders");
   box.innerHTML = "";
   if (orders.length === 0) {
     box.appendChild(el("div", "empty", "No orders yet. Waiting for buyers to send their lists…"));
     return;
   }
-  for (const o of orders) box.appendChild(renderOrder(o));
+  if (shown.length === 0) box.appendChild(el("div", "empty", "No orders match this filter."));
+  for (const o of shown) box.appendChild(renderOrder(o));
 
   // Opened from a phone alert? Scroll to that order and highlight it once.
   if (focusOrder) {
@@ -220,6 +352,7 @@ function updateStats(orders) {
   $("statSales").textContent = "₹" + confirmedToday.reduce((sum, o) => sum + o.total, 0);
   $("pendingCount").textContent = count("pending_vendor");
   $("pendingCount").classList.toggle("hidden", count("pending_vendor") === 0);
+  $("bellDot").classList.toggle("hidden", count("pending_vendor") === 0); // red dot on the bell
 }
 
 function renderOrder(o) {
@@ -228,7 +361,7 @@ function renderOrder(o) {
   const active = o.status === "pending_vendor";       // vendor can confirm
   const waiting = o.status === "waiting_customer";    // vendor asked a question, customer hasn't answered
   const trouble = o.items.some(it => TROUBLE.includes(it.status));
-  if (active) card.classList.add("pending"); // blue left border = needs action
+  if (active) card.classList.add("pending"); // green left border = needs action
 
   // Top: thumbnail + buyer info + status
   const top = el("div", "order-top");
@@ -424,9 +557,17 @@ $("chatForm").addEventListener("submit", async (e) => {
 // INVENTORY
 // =====================================================================
 function stockStatus(stock) {
-  if (stock === 0) return { cls: "out", label: "✖ OUT OF STOCK" };
-  if (stock <= LOW_STOCK) return { cls: "low", label: `⚠ LOW (${stock})` };
-  return { cls: "ok", label: "✔ IN STOCK" };
+  if (stock === 0) return { cls: "out", label: "Out of Stock" };
+  if (stock <= LOW_STOCK) return { cls: "low", label: "Low Stock" };
+  return { cls: "ok", label: "In Stock" };
+}
+
+// Which items each inventory pill shows ("Low Stock" includes out-of-stock items)
+function matchesStockFilter(it) {
+  if (stockFilter === "in") return it.stock > LOW_STOCK;
+  if (stockFilter === "low") return it.stock <= LOW_STOCK;
+  if (stockFilter === "out") return it.stock === 0;
+  return true;
 }
 
 async function loadInventory() {
@@ -438,29 +579,30 @@ function drawInventory(force) {
   // Counters (always up to date)
   const low = inventory.filter(i => i.stock <= LOW_STOCK);
   const out = inventory.filter(i => i.stock === 0).length;
-  $("lowNum").textContent = low.length;
-  $("totalSkus").textContent = inventory.length;
-  $("outBadge").textContent = `${out} Out of Stock`;
-  $("outBadge").classList.toggle("hidden", out === 0);
+  $("invTotal").textContent = inventory.length;
+  $("invLow").textContent = low.length;
+  $("invOut").textContent = out;
+  $("invCats").textContent = new Set(inventory.map(i => i.category)).size;
+  $("pillLow").textContent = `(${low.length})`;
+  $("pillOut").textContent = `(${out})`;
   $("statLow").textContent = low.length;
   $("lowCount").textContent = low.length;
   $("lowCount").classList.toggle("hidden", low.length === 0);
-  $("lowToggle").classList.toggle("on", lowOnly);
 
   // Don't redraw while the vendor is typing a price in the table
   const a = document.activeElement;
   const typing = a && a.tagName === "INPUT" && a.closest("#inventoryTable");
-  const json = JSON.stringify(inventory) + lowOnly + $("search").value + $("catFilter").value;
+  const json = JSON.stringify(inventory) + stockFilter + $("search").value + $("catFilter").value;
   if ((json === lastInvJson && !force) || (typing && !force)) return;
   lastInvJson = json;
 
-  // Filters: search text (SKU / name / Hindi), category, low stock only
+  // Filters: search text (SKU / name / Hindi), category, stock pill
   const q = $("search").value.trim().toLowerCase();
   const cat = $("catFilter").value;
   const rows = inventory.filter(i =>
     (!q || [i.sku, i.name, i.hindi_name, i.brand].join(" ").toLowerCase().includes(q)) &&
     (!cat || i.category === cat) &&
-    (!lowOnly || i.stock <= LOW_STOCK)
+    matchesStockFilter(i)
   );
 
   const tbody = document.querySelector("#inventoryTable tbody");
@@ -475,15 +617,15 @@ function renderInvRow(it) {
   if (prevStock && prevStock[it.id] !== it.stock) tr.classList.add("flash"); // changed or new -> flash
   const status = stockStatus(it.stock);
 
-  tr.appendChild(el("td", "mono sku", it.sku));
-
+  // Product: name, Hindi name and SKU code underneath
   const desc = el("td");
   desc.appendChild(el("div", "pname", it.name));
-  if (it.hindi_name) desc.appendChild(el("div", "hindi", it.hindi_name));
+  const sub = [it.hindi_name, it.sku].filter(Boolean).join(" · ");
+  desc.appendChild(el("div", "hindi", sub));
   tr.appendChild(desc);
 
   const catCell = el("td");
-  catCell.appendChild(el("span", "cat-chip mono", CAT_LABELS[it.category] || it.category));
+  catCell.appendChild(el("span", "cat-chip", CAT_LABELS[it.category] || it.category));
   tr.appendChild(catCell);
 
   // Editable price: saved when the vendor leaves the box or presses Enter
@@ -497,8 +639,9 @@ function renderInvRow(it) {
   priceCell.append("₹ ", price);
   tr.appendChild(priceCell);
 
-  // Stock stepper: − 12 +  then the unit
-  const stockCell = el("td", "center");
+  // Stock level: − 12 + stepper, the unit, and a small bar (full bar = 4× the low-stock limit)
+  const stockCell = el("td");
+  const levelBox = el("div", "stock-cell");
   const stepper = el("div", "stepper " + status.cls);
   const minus = el("button", "", "−");
   const plus = el("button", "", "+");
@@ -507,15 +650,22 @@ function renderInvRow(it) {
   minus.onclick = () => updateItem(it.id, { stock_delta: -1 });
   plus.onclick = () => updateItem(it.id, { stock_delta: 1 });
   stepper.append(minus, el("span", "stock-num", it.stock), plus);
-  stockCell.append(stepper, el("span", "unit", it.unit));
+  const top = el("div");
+  top.append(stepper, el("span", "unit", it.unit));
+  const bar = el("div", "stock-bar " + status.cls);
+  const fill = el("div");
+  fill.style.width = Math.min(100, (it.stock / (LOW_STOCK * 4)) * 100) + "%";
+  bar.appendChild(fill);
+  levelBox.append(top, bar);
+  stockCell.appendChild(levelBox);
   tr.appendChild(stockCell);
 
   const stCell = el("td", "center");
-  stCell.appendChild(el("span", "stock-badge mono " + status.cls, status.label));
+  stCell.appendChild(el("span", "stock-badge " + status.cls, status.label));
   tr.appendChild(stCell);
 
   const restockCell = el("td", "center");
-  const restock = el("button", "btn-outline mono", "⟳ +10");
+  const restock = el("button", "btn-outline", "⟳ +10");
   restock.title = "Quick restock: add 10";
   restock.onclick = () => updateItem(it.id, { stock_delta: 10 });
   restockCell.appendChild(restock);
@@ -546,7 +696,7 @@ async function deleteItem(it) {
 // Filters redraw straight away
 $("search").oninput = () => drawInventory(true);
 $("catFilter").onchange = () => drawInventory(true);
-$("lowToggle").onclick = () => { lowOnly = !lowOnly; drawInventory(true); };
+$("addToggle").onclick = () => { $("addForm").classList.toggle("hidden"); $("newName").focus(); };
 
 // Quick add
 $("addForm").addEventListener("submit", async (e) => {
