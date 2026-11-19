@@ -29,22 +29,6 @@
       <svg class="i" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg>
       Inventory <span id="lowCount" class="count warn hidden"></span>
     </button>
-
-    <div class="nav-label">Other</div>
-    <a class="nav-item" href="/vendor-chat" target="_blank">
-      <svg class="i" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/></svg>
-      Phone alerts ↗
-    </a>
-    <a class="nav-item" href="/" target="_blank">
-      <svg class="i" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>
-      Customer chat ↗
-    </a>
-
-    <div class="side-card">
-      <div class="side-card-title"><span class="live-dot"></span>Live updates</div>
-      <div class="side-card-text">This page refreshes every 2 seconds. New orders also ping your phone alerts chat.</div>
-      <a class="btn-green block" href="/vendor-chat" target="_blank">Open phone alerts</a>
-    </div>
   </aside>
 
   <main class="main">
@@ -56,10 +40,11 @@
       </div>
       <div class="topbar-right">
         <span id="mockBadge" class="mock-badge hidden">MOCK MODE</span>
-        <a class="bell" href="/vendor-chat" target="_blank" title="Phone alerts">
+        <!-- Bell: red dot when an order needs your OK; click shows those orders -->
+        <button class="bell" id="bell" title="Orders that need your OK">
           <svg class="i" viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
           <span id="bellDot" class="bell-dot hidden"></span>
-        </a>
+        </button>
         <div class="user">
           <div class="user-avatar">SG</div>
           <div>
@@ -300,6 +285,7 @@ function selectPill(boxId, value) {
 setupPills("orderPills", f => { orderFilter = f; loadOrders(true); });
 setupPills("stockPills", f => { stockFilter = f; drawInventory(true); });
 $("orderSearch").oninput = () => loadOrders(true);
+$("bell").onclick = () => { orderFilter = "pending_vendor"; selectPill("orderPills", "pending_vendor"); showTab("ordersTab"); loadOrders(true); };
 
 // "Items low / out of stock" card jumps to Inventory with the Low Stock filter on
 $("statLowBox").onclick = () => { stockFilter = "low"; selectPill("stockPills", "low"); drawInventory(true); showTab("inventoryTab"); };

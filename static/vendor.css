@@ -61,18 +61,6 @@ body.vendor {
 .count { margin-left: auto; background: var(--g); color: #fff; border-radius: 999px; padding: 1px 8px; font-size: 12px; font-weight: 600; }
 .count.warn { background: #f59e0b; }
 
-/* Green card at the bottom of the sidebar */
-.side-card {
-  margin-top: auto;
-  background: linear-gradient(135deg, #c3f2d9, #eafbf2);
-  border-radius: 16px;
-  padding: 16px;
-}
-.side-card-title { font-weight: 600; display: flex; align-items: center; gap: 8px; }
-.side-card-text { font-size: 13px; color: #4a5563; margin: 6px 0 14px; }
-.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--g); animation: pulse 2s infinite; }
-@keyframes pulse { 50% { opacity: 0.3; } }
-
 /* ---------- Top bar ---------- */
 .main { min-width: 0; }   /* lets wide tables shrink instead of overflowing */
 .topbar { display: flex; align-items: center; gap: 14px; padding: 8px 4px 20px; flex-wrap: wrap; }
@@ -83,6 +71,7 @@ body.vendor {
   position: relative;
   width: 44px; height: 44px; border-radius: 50%;
   background: var(--card); color: var(--text);
+  border: none;
   display: flex; align-items: center; justify-content: center;
 }
 .bell-dot { position: absolute; top: 10px; right: 11px; width: 9px; height: 9px; border-radius: 50%; background: var(--red); border: 2px solid #fff; }
@@ -266,7 +255,7 @@ tr.flash td { animation: flash 1.5s ease-out; }
   .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px; }
   .brand { padding: 0 8px 0 0; }
   .nav-item { width: auto; }
-  .nav-label, .side-card { display: none; }
+  .nav-label { display: none; }
   .orders-grid { grid-template-columns: 1fr; }
   .search-box { min-width: 0; width: 100%; }
 }
