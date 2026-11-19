@@ -10,34 +10,67 @@ APP_NAME = "ListLens"  # the assistant that sits between buyer and store
 LOW_STOCK = 5          # stock at or below this counts as "low"
 
 
-def find_alternatives(inventory, original, category, qty):
-    """Up to 2 in-stock items from the same category.
-    original = the matched inventory item (or None if nothing matched).
-    Sort: same brand first, then most words in common with the original name
-    (so oil is replaced by oil, not dal), then closest price (or cheapest if there is no original).
+def find_alternatives(inventory, original, raw_text, qty):
+    """Up to 2 in-stock items of the SAME KIND, or [] if we sell nothing like it.
+
+    The "kind" of a product is the last real word of its name or its Hindi name:
+      'Fortune Sunflower Oil 1L' -> oil / तेल,   'Dove Soap 3-pack' -> soap / साबुन
+    - Out of stock (original found): same category and same kind  (shampoo -> another shampoo)
+    - Not found (original is None):  any product whose kind is written in the list line
+      ('coconut oil' -> oils). Bananas or tomatoes get no suggestions, because we sell no fruit/veg.
+    Sort: most words in common, then same brand, then closest price.
     """
-    candidates = [
-        i for i in inventory
-        if i["category"] == category
-        and i["stock"] >= qty
-        and (original is None or i["id"] != original["id"])
-    ]
     if original:
-        words = _name_words(original)
-        candidates.sort(key=lambda i: (
-            i["brand"] != original["brand"],      # False (same brand) sorts first
-            -len(words & _name_words(i)),         # more shared words first
-            abs(i["price"] - original["price"]),  # then closest price
-        ))
+        kinds = _kinds(original)
+        target_words = _words(original["name"])
+        candidates = [i for i in inventory
+                      if i["category"] == original["category"] and i["id"] != original["id"]
+                      and _kinds(i) & kinds]
     else:
-        candidates.sort(key=lambda i: i["price"])
+        target_words = _words(raw_text)
+        candidates = [i for i in inventory if _kinds(i) & target_words]
+
+    candidates = [i for i in candidates if i["stock"] >= qty]
+    candidates.sort(key=lambda i: (
+        -len(target_words & _words(i["name"])),                     # more shared words first
+        original is None or i["brand"] != original["brand"],         # then same brand
+        abs(i["price"] - original["price"]) if original else i["price"],  # then closest / cheapest price
+    ))
     return candidates[:2]
 
 
-def _name_words(item):
-    """Words in a product name, without the brand. 'Fortune Sunflower Oil 1L' -> {'sunflower', 'oil', '1l'}"""
-    brand_words = set(item["brand"].lower().split())
-    return {w for w in item["name"].lower().split() if w not in brand_words and w != "&"}
+# Words that describe size or packing, not what the product is
+_PACK_WORDS = {"pack", "pcs", "pc", "bags", "bag", "ml", "kg", "g", "l", "xl", "and", "or", "of", "the", "with"}
+
+
+def _words(text):
+    """Simple words from a name or list line, in singular form, without sizes.
+    'Eggs (12 pcs), Bananas' -> {'egg', 'banana'}"""
+    clean = "".join(ch if ch.isalpha() or ch.isspace() else " " for ch in text.lower())
+    words = set()
+    for w in clean.split():
+        if len(w) < 2 or w in _PACK_WORDS:
+            continue
+        if w.endswith("s") and not w.endswith("ss") and len(w) > 3:
+            w = w[:-1]  # eggs -> egg, noodles -> noodle
+        words.add(w)
+    return words
+
+
+def _kinds(item):
+    """What kind of product this is: last real word of the English name and of the Hindi name.
+    Brackets are ignored: 'Jaggery (Gud) 1kg' -> {'jaggery', 'गुड़'}"""
+    kinds = set()
+    for name in (item["name"], item.get("hindi_name") or ""):
+        name = name.split("(")[0].split("/")[0]  # drop "(...)" notes and "/ other name"
+        parts = [w for w in name.lower().replace("-", " ").split()
+                 if not any(ch.isdigit() for ch in w) and w not in _PACK_WORDS]
+        if parts:
+            last = parts[-1].strip(".,/")
+            if last.isascii() and last.endswith("s") and not last.endswith("ss") and len(last) > 3:
+                last = last[:-1]
+            kinds.add(last)
+    return kinds
 
 
 def build_order(conn, order_id, buyer_name, ai_items):
@@ -59,8 +92,7 @@ def build_order(conn, order_id, buyer_name, ai_items):
             line_price = qty * item["price"]
         else:
             status = "out_of_stock" if item else "not_found"
-            category = item["category"] if item else ai["category"]
-            alternatives = find_alternatives(inventory, item, category, qty)
+            alternatives = find_alternatives(inventory, item, ai["raw_text"], qty)
 
         cur = conn.execute(
             """INSERT INTO order_items (order_id, raw_text, qty, item_id, status, chosen_item_id, line_price, alternatives_json)
@@ -73,10 +105,14 @@ def build_order(conn, order_id, buyer_name, ai_items):
         if status == "available":
             available.append({"name": item["name"], "qty": qty, "price": line_price})
         else:
-            if item:
+            if item and alternatives:
                 text = f"{item['name']} is out of stock. Pick one:"
-            else:
+            elif item:
+                text = f"{item['name']} is out of stock and we have nothing similar. Tap Skip to continue."
+            elif alternatives:
                 text = f"We don't have \"{ai['raw_text']}\". Pick one:"
+            else:
+                text = f"We don't sell \"{ai['raw_text']}\". Tap Skip to continue."
             choices.append({
                 "order_item_id": order_item_id,
                 "text": text,
