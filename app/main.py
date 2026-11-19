@@ -209,6 +209,21 @@ def send_text(body: TextBody):
     return {"ok": True}
 
 
+class ResetChatBody(BaseModel):
+    buyer_name: str
+
+
+@app.post("/api/reset-chat")
+def reset_chat(body: ResetChatBody):
+    """Customer typed /resetchatgrocery: wipe this customer's chat messages so they start fresh.
+    Orders stay on the vendor dashboard (the vendor can delete them there)."""
+    conn = get_conn()
+    conn.execute("DELETE FROM messages WHERE buyer_name = ?", (body.buyer_name,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
 class ChooseBody(BaseModel):
     order_item_id: int
     chosen_item_id: int | None = None  # None means "Skip"
@@ -296,6 +311,45 @@ def reject(order_id: int, body: RejectBody):
         return {"ok": True}
     finally:
         conn.close()
+
+
+OPEN_STATUSES = ("reading", "awaiting_buyer", "pending_vendor", "waiting_customer")
+
+
+def _delete_order(conn, order):
+    """Remove one order and its items. Inventory is NOT changed:
+    stock taken by a confirmed order stays sold.
+    If the order was still open, the customer is told it was cancelled."""
+    if order["status"] in OPEN_STATUSES:
+        bot_text(conn, order["buyer_name"], f"🗑 Your order #{order['id']} was cancelled by {logic.STORE_NAME}.")
+    conn.execute("DELETE FROM order_items WHERE order_id = ?", (order["id"],))
+    conn.execute("DELETE FROM orders WHERE id = ?", (order["id"],))
+
+
+@app.delete("/api/vendor/orders/{order_id}")
+def delete_order(order_id: int):
+    """Vendor deletes one order from the list (e.g. an old delivered one)."""
+    conn = get_conn()
+    order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if not order:
+        conn.close()
+        raise HTTPException(404, "Order not found")
+    _delete_order(conn, order)
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.delete("/api/vendor/orders")
+def delete_all_orders():
+    """Vendor clears the whole orders list. Inventory stays as it is."""
+    conn = get_conn()
+    orders = conn.execute("SELECT * FROM orders").fetchall()
+    for o in orders:
+        _delete_order(conn, o)
+    conn.commit()
+    conn.close()
+    return {"ok": True, "deleted": len(orders)}
 
 
 class VendorMessageBody(BaseModel):

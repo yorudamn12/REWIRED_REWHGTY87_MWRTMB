@@ -87,6 +87,7 @@
             <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>
             <input id="orderSearch" placeholder="Search name, flat, society or order #…">
           </div>
+          <button class="btn-danger-soft" id="deleteAllBtn" title="Remove every order from this list. Inventory is not changed.">🗑 Delete all orders</button>
         </div>
         <div class="pills" id="orderPills">
           <button class="pill active" data-f="all">All Orders</button>
@@ -411,6 +412,13 @@ function renderOrder(o) {
     chatBtn.onclick = () => openChat(o.buyer_name, o.id);
     actions.appendChild(chatBtn);
   }
+  // Delete this order from the list (inventory is not changed)
+  const delBtn = el("button", "btn-icon-del", "🗑 Delete");
+  delBtn.title = "Delete this order from the list";
+  delBtn.onclick = () => deleteOrder(o);
+  if (!(trouble || waiting || o.customer_replied)) delBtn.style.marginLeft = "auto";
+  actions.appendChild(delBtn);
+
   if (waiting) actions.appendChild(el("div", "hold-note", "⏳ You asked the customer a question. Confirm unlocks when they reply."));
 
   // Inline box: delivery date (confirm) or reason (reject) — no browser popups
@@ -467,6 +475,23 @@ async function rejectOrder(id) {
   else errors[id] = (await res.json()).detail;
   await refresh(true);
 }
+
+// Delete one order. Stock is NOT given back: confirmed items are already sold.
+async function deleteOrder(o) {
+  const open = ["awaiting_buyer", "pending_vendor", "waiting_customer"].includes(o.status);
+  const note = open ? "\n\nThis order is still open, so the customer will be told it was cancelled." : "";
+  if (!confirm(`Delete order #${o.id} (${o.buyer_name})?\nInventory will not change.${note}`)) return;
+  await fetch(`/api/vendor/orders/${o.id}`, { method: "DELETE" });
+  delete drafts[o.id]; delete errors[o.id];
+  await refresh(true);
+}
+
+// Delete every order. Inventory stays exactly as it is.
+$("deleteAllBtn").onclick = async () => {
+  if (!confirm("Delete ALL orders from the list?\nInventory will not change. This cannot be undone.")) return;
+  await fetch("/api/vendor/orders", { method: "DELETE" });
+  await refresh(true);
+};
 
 // =====================================================================
 // CHAT DRAWER (human intervention)

@@ -135,6 +135,10 @@ body.vendor {
 .btn-outline { background: #fff; border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-size: 13px; color: var(--text); }
 .btn-outline:hover { background: var(--g-soft); border-color: #b7e6c9; color: var(--g); }
 .btn-confirm:disabled, .btn-red:disabled { opacity: 0.4; cursor: default; }
+.btn-danger-soft { background: #fdeeee; color: var(--red); border: none; border-radius: 999px; padding: 9px 16px; font-weight: 600; font-size: 14px; }
+.btn-danger-soft:hover { background: #fbdcdc; }
+.btn-icon-del { background: #fff; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; }
+.btn-icon-del:hover { color: var(--red); border-color: #f5c2c2; background: #fdeeee; }
 .icon-del { background: none; border: none; font-size: 16px; opacity: 0.5; }
 .icon-del:hover { opacity: 1; }
 

@@ -134,7 +134,7 @@ def choose(conn, order_item_id, chosen_item_id):
     """Buyer picked an alternative (or None = skip). Returns an error string, or None if OK."""
     oi = conn.execute("SELECT * FROM order_items WHERE id = ?", (order_item_id,)).fetchone()
     if not oi:
-        return "Item not found"
+        return "This order was removed by the store."
     if oi["status"] not in ("out_of_stock", "not_found"):
         return "Already chosen"
     order = conn.execute("SELECT * FROM orders WHERE id = ?", (oi["order_id"],)).fetchone()

@@ -293,6 +293,23 @@ $("changeDetails").onclick = () => {
   location.reload();
 };
 
+// ---------- Secret command: type /resetchatgrocery to start this chat fresh ----------
+// Deletes this customer's chat messages on the server and forgets their saved
+// name/address, so the bot starts again from "What's your name?".
+// Orders stay on the vendor dashboard (the vendor can delete them there).
+const RESET_COMMAND = "/resetchatgrocery";
+async function resetChat() {
+  if (buyer) {
+    await fetch("/api/reset-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ buyer_name: buyer.name }),
+    });
+  }
+  localStorage.removeItem(STORAGE_KEY);
+  location.reload();
+}
+
 // ---------- Polling ----------
 async function poll() {
   const res = await fetch(`/api/messages?buyer=${encodeURIComponent(buyer.name)}&after=${lastId}`);
@@ -464,6 +481,7 @@ textInput.addEventListener("input", updateRoundButton);
 $("bottomBar").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = textInput.value.trim();
+  if (text.toLowerCase() === RESET_COMMAND) { resetChat(); return; }
   if (onboarding) {                      // still answering the bot's questions
     textInput.value = "";
     updateRoundButton();
