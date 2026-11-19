@@ -5,10 +5,19 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from app.seed import SEED_ITEMS
+from app.seed import HINDI, SEED_ITEMS
 
 # The database file lives in the project folder (next to app/ and static/)
 DB_PATH = Path(__file__).resolve().parent.parent / "listlens.db"
+
+# The store owner's own ListLens chat (order alerts) is saved under this special name
+STORE_CHAT = "__store__"
+
+# Short codes used in SKU numbers, e.g. SKU-STP-007
+CATEGORY_CODES = {
+    "staples": "STP", "dairy": "DRY", "personal_care": "PCR", "cleaning": "CLN",
+    "snacks": "SNK", "beverages": "BEV", "other": "OTH",
+}
 
 
 def get_conn():
@@ -23,6 +32,19 @@ def now():
     return datetime.now().isoformat(timespec="seconds")
 
 
+def make_sku(category, item_id):
+    """SKU code from category + id, e.g. ('staples', 7) -> 'SKU-STP-007'"""
+    return f"SKU-{CATEGORY_CODES.get(category, 'OTH')}-{item_id:03d}"
+
+
+def _add_missing_columns(conn, table, columns):
+    """Older database files may miss newer columns: add them if needed."""
+    existing = [r["name"] for r in conn.execute(f"PRAGMA table_info({table})")]
+    for col in columns:
+        if col not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+
+
 def init_db():
     """Create all tables (if missing) and fill inventory the first time."""
     conn = get_conn()
@@ -30,7 +52,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS inventory (
             id INTEGER PRIMARY KEY,
             name TEXT, brand TEXT, category TEXT, unit TEXT,
-            price REAL, stock INTEGER
+            price REAL, stock INTEGER,
+            sku TEXT, hindi_name TEXT
         );
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY,
@@ -50,19 +73,23 @@ def init_db():
             payload_json TEXT, created_at TEXT
         );
     """)
-    # Older database files may miss the newer order columns: add them if needed
-    existing = [r["name"] for r in conn.execute("PRAGMA table_info(orders)")]
-    for col in ("society", "block", "delivery_date"):
-        if col not in existing:
-            conn.execute(f"ALTER TABLE orders ADD COLUMN {col} TEXT")
+    _add_missing_columns(conn, "orders", ["society", "block", "delivery_date"])
+    _add_missing_columns(conn, "inventory", ["sku", "hindi_name"])
 
     # Seed only if inventory is empty (so restarting the server keeps stock changes)
     count = conn.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
     if count == 0:
-        conn.executemany(
-            "INSERT INTO inventory (name, brand, category, unit, price, stock) VALUES (?, ?, ?, ?, ?, ?)",
-            SEED_ITEMS,
-        )
+        for name, brand, category, unit, price, stock in SEED_ITEMS:
+            cur = conn.execute(
+                "INSERT INTO inventory (name, brand, category, unit, price, stock, hindi_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (name, brand, category, unit, price, stock, HINDI.get(name, "")),
+            )
+            conn.execute("UPDATE inventory SET sku = ? WHERE id = ?", (make_sku(category, cur.lastrowid), cur.lastrowid))
+
+    # Fill SKU / Hindi name for rows from an older database
+    for r in conn.execute("SELECT id, name, category FROM inventory WHERE sku IS NULL").fetchall():
+        conn.execute("UPDATE inventory SET sku = ?, hindi_name = ? WHERE id = ?",
+                     (make_sku(r["category"], r["id"]), HINDI.get(r["name"], ""), r["id"]))
     conn.commit()
     conn.close()
 
@@ -86,3 +113,9 @@ def add_message(conn, buyer_name, sender, msg_type, payload):
 def bot_text(conn, buyer_name, text):
     """Shortcut: bot sends a plain text message."""
     return add_message(conn, buyer_name, "bot", "text", {"text": text})
+
+
+def notify_store(conn, text, order_id=None):
+    """ListLens sends an alert to the store owner's phone chat.
+    order_id (optional) adds an 'Open order' button that jumps to the dashboard."""
+    return add_message(conn, STORE_CHAT, "bot", "alert", {"text": text, "order_id": order_id})

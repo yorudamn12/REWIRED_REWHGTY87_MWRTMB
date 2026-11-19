@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app import ai, logic
-from app.db import add_message, bot_text, get_conn, get_inventory, init_db, now
+from app.db import add_message, bot_text, get_conn, get_inventory, init_db, make_sku, notify_store, now
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = BASE_DIR / "uploads"
@@ -42,6 +42,12 @@ def vendor_page():
     return RedirectResponse("/static/vendor.html")
 
 
+@app.get("/vendor-chat")
+def vendor_chat_page():
+    """The store owner's phone view: ListLens order alerts."""
+    return RedirectResponse("/static/vendor_chat.html")
+
+
 # Example housing societies served by the store (shown as a dropdown on sign-up)
 SOCIETIES = [
     "Green Meadows Apartments",
@@ -51,11 +57,13 @@ SOCIETIES = [
     "Silver Oak Towers",
 ]
 BLOCKS = ["A", "B", "C", "D", "E", "F"]
+UNITS = ["pkt", "pouch", "box", "bottle", "bag", "jar", "tube", "piece", "kg", "L"]
 
 
 @app.get("/api/config")
 def config():
-    return {"mode": ai.AI_MODE, "societies": SOCIETIES, "blocks": BLOCKS, "categories": ai.CATEGORIES}
+    return {"mode": ai.AI_MODE, "societies": SOCIETIES, "blocks": BLOCKS,
+            "categories": ai.CATEGORIES, "units": UNITS, "low_stock": logic.LOW_STOCK}
 
 
 # ---------- Buyer side ----------
@@ -139,10 +147,12 @@ def send_text(body: TextBody):
         raise HTTPException(400, "Empty message")
     conn = get_conn()
     add_message(conn, body.buyer_name, "buyer", "text", {"text": text})
-    conn.execute(
-        "UPDATE orders SET status = 'pending_vendor' WHERE buyer_name = ? AND status = 'waiting_customer'",
-        (body.buyer_name,),
-    )
+    waiting = conn.execute(
+        "SELECT id FROM orders WHERE buyer_name = ? AND status = 'waiting_customer'", (body.buyer_name,)
+    ).fetchall()
+    for o in waiting:
+        logic.set_status(conn, o["id"], "pending_vendor")
+        notify_store(conn, f"💬 {body.buyer_name} replied on order #{o['id']}:\n“{text}”", o["id"])
     open_order = conn.execute(
         "SELECT 1 FROM orders WHERE buyer_name = ? AND status IN ('awaiting_buyer', 'pending_vendor')",
         (body.buyer_name,),
@@ -278,27 +288,76 @@ def inventory():
 
 class NewItemBody(BaseModel):
     name: str
+    hindi_name: str = ""
     brand: str = ""
     category: str
-    unit: str = "pack"
+    unit: str = "pkt"
     price: float
     stock: int
 
 
 @app.post("/api/inventory")
 def add_item(body: NewItemBody):
-    """Vendor adds a new product to the inventory."""
-    if not body.name.strip():
+    """Vendor adds a new product. The SKU code is created automatically."""
+    name = body.name.strip()
+    if not name:
         raise HTTPException(400, "Name is required")
     if body.category not in ai.CATEGORIES:
         raise HTTPException(400, "Unknown category")
     if body.price <= 0 or body.stock < 0:
         raise HTTPException(400, "Price must be above 0 and stock cannot be negative")
+    brand = body.brand.strip() or name.split()[0]  # no brand given -> use the first word ("MDH Haldi" -> "MDH")
     conn = get_conn()
     cur = conn.execute(
-        "INSERT INTO inventory (name, brand, category, unit, price, stock) VALUES (?, ?, ?, ?, ?, ?)",
-        (body.name.strip(), body.brand.strip(), body.category, body.unit.strip() or "pack", body.price, body.stock),
+        "INSERT INTO inventory (name, brand, category, unit, price, stock, hindi_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (name, brand, body.category, body.unit.strip() or "pkt", body.price, body.stock, body.hindi_name.strip()),
     )
+    sku = make_sku(body.category, cur.lastrowid)
+    conn.execute("UPDATE inventory SET sku = ? WHERE id = ?", (sku, cur.lastrowid))
     conn.commit()
     conn.close()
-    return {"ok": True, "id": cur.lastrowid}
+    return {"ok": True, "id": cur.lastrowid, "sku": sku}
+
+
+class UpdateItemBody(BaseModel):
+    price: float | None = None      # new price
+    stock_delta: int | None = None  # +1 / -1 from the stepper, +10 from "Quick restock"
+
+
+@app.patch("/api/inventory/{item_id}")
+def update_item(item_id: int, body: UpdateItemBody):
+    """Change price and/or stock of one product. Stock never goes below 0."""
+    conn = get_conn()
+    try:
+        if not conn.execute("SELECT 1 FROM inventory WHERE id = ?", (item_id,)).fetchone():
+            raise HTTPException(404, "Item not found")
+        if body.price is not None:
+            if body.price <= 0:
+                raise HTTPException(400, "Price must be above 0")
+            conn.execute("UPDATE inventory SET price = ? WHERE id = ?", (body.price, item_id))
+        if body.stock_delta is not None:
+            conn.execute("UPDATE inventory SET stock = MAX(0, stock + ?) WHERE id = ?", (body.stock_delta, item_id))
+        conn.commit()
+        return dict(conn.execute("SELECT * FROM inventory WHERE id = ?", (item_id,)).fetchone())
+    finally:
+        conn.close()
+
+
+@app.delete("/api/inventory/{item_id}")
+def delete_item(item_id: int):
+    """Remove a product. Not allowed while it is part of an order that is still open."""
+    conn = get_conn()
+    try:
+        in_use = conn.execute(
+            """SELECT 1 FROM order_items oi JOIN orders o ON o.id = oi.order_id
+               WHERE (oi.item_id = ? OR oi.chosen_item_id = ?)
+                 AND o.status IN ('reading', 'awaiting_buyer', 'pending_vendor', 'waiting_customer')""",
+            (item_id, item_id),
+        ).fetchone()
+        if in_use:
+            raise HTTPException(400, "This item is in an open order. Confirm or reject that order first.")
+        conn.execute("DELETE FROM inventory WHERE id = ?", (item_id,))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()

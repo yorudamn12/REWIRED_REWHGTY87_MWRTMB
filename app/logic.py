@@ -3,10 +3,11 @@
 import json
 from datetime import date
 
-from app.db import add_message, bot_text, get_inventory
+from app.db import add_message, bot_text, get_inventory, notify_store
 
 STORE_NAME = "Sharma General Store"
 APP_NAME = "ListLens"  # the assistant that sits between buyer and store
+LOW_STOCK = 5          # stock at or below this counts as "low"
 
 
 def find_alternatives(inventory, original, category, qty):
@@ -97,6 +98,22 @@ def build_order(conn, order_id, buyer_name, ai_items):
     else:
         set_status(conn, order_id, "pending_vendor")
         bot_text(conn, buyer_name, f"Sent to store ✅ Total ₹{total:g}. Waiting for confirmation.")
+        notify_new_order(conn, order_id)
+
+
+def notify_new_order(conn, order_id):
+    """Ping the store owner's phone chat: a new order is waiting for their OK."""
+    order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    rows = conn.execute("SELECT status FROM order_items WHERE order_id = ?", (order_id,)).fetchall()
+    in_order = sum(1 for r in rows if r["status"] in ("available", "replaced"))
+    changed = sum(1 for r in rows if r["status"] in ("replaced", "skipped"))
+    text = (f"🛒 New order #{order_id}\n"
+            f"👤 {order['buyer_name']}\n"
+            f"📍 {address_text(order)}\n"
+            f"🧾 {in_order} items · Total ₹{order['total']:g}")
+    if changed:
+        text += f"\n⚠️ {changed} item(s) replaced or skipped. Please check."
+    notify_store(conn, text, order_id)
 
 
 def recompute_total(conn, order_id):
@@ -151,6 +168,7 @@ def choose(conn, order_item_id, chosen_item_id):
     if still_open == 0:
         set_status(conn, order["id"], "pending_vendor")
         bot_text(conn, order["buyer_name"], f"Sent to store ✅ Total ₹{total:g}. Waiting for confirmation.")
+        notify_new_order(conn, order["id"])
     return None
 
 
@@ -214,6 +232,10 @@ def confirm_order(conn, order_id, delivery_date):
 
     for inv_id, qty in need.items():
         conn.execute("UPDATE inventory SET stock = stock - ? WHERE id = ?", (qty, inv_id))
+        # Warn the store owner on their phone when an item is running low
+        item = conn.execute("SELECT name, stock FROM inventory WHERE id = ?", (inv_id,)).fetchone()
+        if item["stock"] <= LOW_STOCK:
+            notify_store(conn, f"📉 Low stock: {item['name']}, only {item['stock']} left. Time to restock.")
     conn.execute("UPDATE orders SET status = 'confirmed', delivery_date = ? WHERE id = ?",
                  (day.isoformat(), order_id))
 

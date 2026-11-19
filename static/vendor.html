@@ -13,44 +13,76 @@
     <div class="h-title">Sharma General Store <span id="mockBadge" class="mock-badge hidden">MOCK MODE</span></div>
     <div class="h-sub">Vendor dashboard · orders arrive through ListLens</div>
   </div>
-  <div class="live"><span class="live-dot"></span>Live · updates every 2s</div>
+  <div class="live">
+    <a class="alerts-link" href="/vendor-chat" target="_blank">📱 Phone alerts ↗</a>
+    <span class="live-dot"></span>Live · updates every 2s
+  </div>
 </div>
 
 <!-- Tabs -->
 <div class="tabs">
   <button class="tab active" data-tab="ordersTab">🧾 Customer Orders <span id="pendingCount" class="count hidden"></span></button>
-  <button class="tab" data-tab="inventoryTab">📦 Inventory</button>
+  <button class="tab" data-tab="inventoryTab">📦 Inventory <span id="lowCount" class="count warn hidden"></span></button>
 </div>
 
-<!-- Tab 1: Orders -->
+<!-- ===================== Tab 1: Orders ===================== -->
 <div id="ordersTab" class="tab-page">
-  <div class="orders-col" id="orders">
+  <!-- Quick numbers across the top -->
+  <div class="stats">
+    <div class="stat blue"><div class="stat-num" id="statPending">0</div><div class="stat-label">Need your OK</div></div>
+    <div class="stat purple"><div class="stat-num" id="statWaiting">0</div><div class="stat-label">Waiting for customer reply</div></div>
+    <div class="stat green"><div class="stat-num" id="statConfirmed">0</div><div class="stat-label">Confirmed today</div></div>
+    <div class="stat dark"><div class="stat-num" id="statSales">₹0</div><div class="stat-label">Today's confirmed sales</div></div>
+    <div class="stat amber clickable" id="statLowBox"><div class="stat-num" id="statLow">0</div><div class="stat-label">Items low / out of stock ›</div></div>
+  </div>
+  <div class="orders-grid" id="orders">
     <div class="empty">No orders yet. Waiting for buyers to send their lists…</div>
   </div>
 </div>
 
-<!-- Tab 2: Inventory -->
+<!-- ===================== Tab 2: Inventory ===================== -->
 <div id="inventoryTab" class="tab-page hidden">
+  <!-- Quick add -->
   <div class="panel">
-    <h2>➕ Add a new item</h2>
+    <div class="panel-head">
+      <h2>📦 QUICK ADD SKU TO LIVE STORE INVENTORY</h2>
+      <span class="mono hint">SKU code is created automatically</span>
+    </div>
     <form id="addForm" class="add-form">
-      <input id="newName" placeholder="Item name (e.g. Amul Paneer 200g)" required>
-      <input id="newBrand" placeholder="Brand (e.g. Amul)">
+      <input id="newName" placeholder="Product name (e.g. MDH Haldi 100g)" required>
+      <input id="newHindi" placeholder="Hindi name (optional, e.g. हल्दी)">
       <select id="newCategory" required></select>
-      <input id="newUnit" placeholder="Unit (pack, bottle…)">
+      <select id="newUnit" required></select>
       <input id="newPrice" type="number" min="1" step="0.5" placeholder="Price ₹" required>
       <input id="newStock" type="number" min="0" step="1" placeholder="Stock" required>
-      <button class="btn-confirm" type="submit">Add item</button>
+      <button class="btn-dark" type="submit">＋ Add Item</button>
     </form>
     <div id="addMsg" class="form-msg"></div>
   </div>
 
+  <!-- Filters + inventory table -->
   <div class="panel">
-    <h2>📦 Live Inventory <span class="hint">· stock 3 or less is red · changes flash yellow</span></h2>
-    <table class="data" id="inventoryTable">
-      <thead><tr><th>Item</th><th>Brand</th><th>Category</th><th class="num">Price</th><th class="num">Stock</th></tr></thead>
+    <div class="toolbar">
+      <input id="search" class="search" placeholder="🔍 Filter by SKU, product name, or Hindi term…">
+      <select id="catFilter"><option value="">All Categories</option></select>
+      <div class="toolbar-right">
+        <button id="lowToggle" class="btn-outline mono">↘ Low Stock Only (<span id="lowNum">0</span>)</button>
+        <span class="mono">Total: <b id="totalSkus">0</b> SKUs</span>
+        <span id="outBadge" class="out-badge mono hidden"></span>
+      </div>
+    </div>
+    <table class="data inv-table" id="inventoryTable">
+      <thead>
+        <tr>
+          <th class="mono">SKU Code</th><th class="mono">Product Description</th><th class="mono">Category</th>
+          <th class="mono num">Price (₹)</th><th class="mono center">Current Stock</th><th class="mono center">Status</th>
+          <th class="mono center">Quick Restock</th><th></th>
+        </tr>
+      </thead>
       <tbody></tbody>
     </table>
+    <div id="invEmpty" class="empty hidden">No items match your filter.</div>
+    <div id="invError" class="error"></div>
   </div>
 </div>
 
@@ -78,10 +110,15 @@
 let lastOrdersJson = "";   // re-draw orders only when something changed
 const drafts = {};         // orderId -> {type: "confirm"|"reject", value} for the open inline box
 const errors = {};         // orderId -> error message from the server
+let inventory = [];        // latest inventory from the server
 let prevStock = null;      // itemId -> stock, to flash rows that changed
+let lastInvJson = "";      // re-draw inventory only when something changed
+let lowOnly = false;       // "Low Stock Only" toggle
+let LOW_STOCK = 5;         // from /api/config
 let chatBuyer = null;      // whose chat is open in the drawer
 let chatOrderId = null;    // the order the drawer was opened from
-let chatCount = -1;        // number of chat messages shown (re-draw when it changes)
+let chatCount = -1;        // re-draw the chat only when it changes
+let focusOrder = new URLSearchParams(location.search).get("order"); // ?order=4 from a phone alert
 
 const TROUBLE = ["replaced", "skipped", "not_found", "out_of_stock"]; // item statuses that need a human look
 const STATUS_LABELS = {
@@ -91,6 +128,13 @@ const STATUS_LABELS = {
   waiting_customer: "⏳ Waiting for customer reply",
   confirmed: "Confirmed", rejected: "Rejected", failed: "Failed",
 };
+// Friendly names for our fixed categories
+const CAT_LABELS = {
+  staples: "Staples & Grains", dairy: "Dairy & Bakery", personal_care: "Personal Care",
+  cleaning: "Household & Cleaning", snacks: "Snacks & Instant", beverages: "Beverages", other: "Other",
+};
+const UNIT_LABELS = { pkt: "pkt (Packet)", pouch: "pouch", box: "box", bottle: "bottle", bag: "bag",
+                      jar: "jar", tube: "tube", piece: "piece", kg: "kg", L: "L (Litre)" };
 
 const $ = (id) => document.getElementById(id);
 
@@ -114,26 +158,34 @@ function isoDay(plusDays) {
   return d.toLocaleDateString("en-CA"); // en-CA gives YYYY-MM-DD
 }
 
+async function postJson(url, body, method = "POST") {
+  return fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+
 fetch("/api/config").then(r => r.json()).then(cfg => {
   if (cfg.mode === "mock") $("mockBadge").classList.remove("hidden");
-  for (const c of cfg.categories) $("newCategory").add(new Option(c.replace("_", " "), c));
+  LOW_STOCK = cfg.low_stock;
+  for (const c of cfg.categories) {
+    $("newCategory").add(new Option(CAT_LABELS[c] || c, c));
+    $("catFilter").add(new Option(CAT_LABELS[c] || c, c));
+  }
+  for (const u of cfg.units) $("newUnit").add(new Option(UNIT_LABELS[u] || u, u));
 });
 
 // ---------- Tabs ----------
-document.querySelectorAll(".tab").forEach(btn => {
-  btn.onclick = () => {
-    document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b === btn));
-    document.querySelectorAll(".tab-page").forEach(p => p.classList.toggle("hidden", p.id !== btn.dataset.tab));
-  };
-});
+function showTab(id) {
+  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === id));
+  document.querySelectorAll(".tab-page").forEach(p => p.classList.toggle("hidden", p.id !== id));
+}
+document.querySelectorAll(".tab").forEach(btn => btn.onclick = () => showTab(btn.dataset.tab));
+$("statLowBox").onclick = () => { lowOnly = true; drawInventory(true); showTab("inventoryTab"); };
 
-// ---------- Orders ----------
+// =====================================================================
+// ORDERS
+// =====================================================================
 async function loadOrders(force) {
   const orders = await (await fetch("/api/vendor/orders")).json();
-
-  const pending = orders.filter(o => o.status === "pending_vendor").length;
-  $("pendingCount").textContent = pending;
-  $("pendingCount").classList.toggle("hidden", pending === 0);
+  updateStats(orders);
 
   const json = JSON.stringify(orders);
   if (json === lastOrdersJson && !force) return; // nothing new
@@ -146,10 +198,33 @@ async function loadOrders(force) {
     return;
   }
   for (const o of orders) box.appendChild(renderOrder(o));
+
+  // Opened from a phone alert? Scroll to that order and highlight it once.
+  if (focusOrder) {
+    const card = $("order-" + focusOrder);
+    if (card) {
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      card.classList.add("highlight");
+      focusOrder = null;
+    }
+  }
+}
+
+function updateStats(orders) {
+  const today = isoDay(0);
+  const count = (s) => orders.filter(o => o.status === s).length;
+  const confirmedToday = orders.filter(o => o.status === "confirmed" && o.created_at.startsWith(today));
+  $("statPending").textContent = count("pending_vendor");
+  $("statWaiting").textContent = count("waiting_customer");
+  $("statConfirmed").textContent = confirmedToday.length;
+  $("statSales").textContent = "₹" + confirmedToday.reduce((sum, o) => sum + o.total, 0);
+  $("pendingCount").textContent = count("pending_vendor");
+  $("pendingCount").classList.toggle("hidden", count("pending_vendor") === 0);
 }
 
 function renderOrder(o) {
   const card = el("div", "order-card");
+  card.id = "order-" + o.id;
   const active = o.status === "pending_vendor";       // vendor can confirm
   const waiting = o.status === "waiting_customer";    // vendor asked a question, customer hasn't answered
   const trouble = o.items.some(it => TROUBLE.includes(it.status));
@@ -260,10 +335,6 @@ function rejectBox(id, d) {
   return box;
 }
 
-async function postJson(url, body) {
-  return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-}
-
 async function confirmOrder(id) {
   const res = await postJson(`/api/vendor/orders/${id}/confirm`, { delivery_date: drafts[id].value });
   if (res.ok) { delete errors[id]; delete drafts[id]; }
@@ -278,7 +349,9 @@ async function rejectOrder(id) {
   await refresh(true);
 }
 
-// ---------- Chat drawer (human intervention) ----------
+// =====================================================================
+// CHAT DRAWER (human intervention)
+// =====================================================================
 function openChat(buyerName, orderId) {
   chatBuyer = buyerName;
   chatOrderId = orderId;
@@ -344,30 +417,140 @@ $("chatForm").addEventListener("submit", async (e) => {
   refresh(true);
 });
 
-// ---------- Inventory ----------
-async function loadInventory() {
-  const items = await (await fetch("/api/inventory")).json();
-  const tbody = document.querySelector("#inventoryTable tbody");
-  tbody.innerHTML = "";
-  for (const it of items) {
-    const tr = document.createElement("tr");
-    if (it.stock <= 3) tr.classList.add("low");                                // low stock -> red
-    if (prevStock && prevStock[it.id] !== it.stock) tr.classList.add("flash"); // changed or new -> flash
-    tr.appendChild(el("td", "", it.name));
-    tr.appendChild(el("td", "", it.brand));
-    tr.appendChild(el("td", "", it.category.replace("_", " ")));
-    tr.appendChild(el("td", "num", `₹${it.price}`));
-    tr.appendChild(el("td", "num", it.stock));
-    tbody.appendChild(tr);
-  }
-  prevStock = Object.fromEntries(items.map(i => [i.id, i.stock]));
+// =====================================================================
+// INVENTORY
+// =====================================================================
+function stockStatus(stock) {
+  if (stock === 0) return { cls: "out", label: "✖ OUT OF STOCK" };
+  if (stock <= LOW_STOCK) return { cls: "low", label: `⚠ LOW (${stock})` };
+  return { cls: "ok", label: "✔ IN STOCK" };
 }
 
+async function loadInventory() {
+  inventory = await (await fetch("/api/inventory")).json();
+  drawInventory(false);
+}
+
+function drawInventory(force) {
+  // Counters (always up to date)
+  const low = inventory.filter(i => i.stock <= LOW_STOCK);
+  const out = inventory.filter(i => i.stock === 0).length;
+  $("lowNum").textContent = low.length;
+  $("totalSkus").textContent = inventory.length;
+  $("outBadge").textContent = `${out} Out of Stock`;
+  $("outBadge").classList.toggle("hidden", out === 0);
+  $("statLow").textContent = low.length;
+  $("lowCount").textContent = low.length;
+  $("lowCount").classList.toggle("hidden", low.length === 0);
+  $("lowToggle").classList.toggle("on", lowOnly);
+
+  // Don't redraw while the vendor is typing a price in the table
+  const a = document.activeElement;
+  const typing = a && a.tagName === "INPUT" && a.closest("#inventoryTable");
+  const json = JSON.stringify(inventory) + lowOnly + $("search").value + $("catFilter").value;
+  if ((json === lastInvJson && !force) || (typing && !force)) return;
+  lastInvJson = json;
+
+  // Filters: search text (SKU / name / Hindi), category, low stock only
+  const q = $("search").value.trim().toLowerCase();
+  const cat = $("catFilter").value;
+  const rows = inventory.filter(i =>
+    (!q || [i.sku, i.name, i.hindi_name, i.brand].join(" ").toLowerCase().includes(q)) &&
+    (!cat || i.category === cat) &&
+    (!lowOnly || i.stock <= LOW_STOCK)
+  );
+
+  const tbody = document.querySelector("#inventoryTable tbody");
+  tbody.innerHTML = "";
+  for (const it of rows) tbody.appendChild(renderInvRow(it));
+  $("invEmpty").classList.toggle("hidden", rows.length > 0);
+  prevStock = Object.fromEntries(inventory.map(i => [i.id, i.stock]));
+}
+
+function renderInvRow(it) {
+  const tr = document.createElement("tr");
+  if (prevStock && prevStock[it.id] !== it.stock) tr.classList.add("flash"); // changed or new -> flash
+  const status = stockStatus(it.stock);
+
+  tr.appendChild(el("td", "mono sku", it.sku));
+
+  const desc = el("td");
+  desc.appendChild(el("div", "pname", it.name));
+  if (it.hindi_name) desc.appendChild(el("div", "hindi", it.hindi_name));
+  tr.appendChild(desc);
+
+  const catCell = el("td");
+  catCell.appendChild(el("span", "cat-chip mono", CAT_LABELS[it.category] || it.category));
+  tr.appendChild(catCell);
+
+  // Editable price: saved when the vendor leaves the box or presses Enter
+  const priceCell = el("td", "num");
+  const price = document.createElement("input");
+  price.type = "number"; price.min = "1"; price.step = "0.5";
+  price.className = "price-input";
+  price.value = it.price;
+  price.onchange = () => updateItem(it.id, { price: Number(price.value) });
+  price.onkeydown = (e) => { if (e.key === "Enter") price.blur(); };
+  priceCell.append("₹ ", price);
+  tr.appendChild(priceCell);
+
+  // Stock stepper: − 12 +  then the unit
+  const stockCell = el("td", "center");
+  const stepper = el("div", "stepper " + status.cls);
+  const minus = el("button", "", "−");
+  const plus = el("button", "", "+");
+  minus.title = "Remove 1"; plus.title = "Add 1";
+  minus.disabled = it.stock === 0;
+  minus.onclick = () => updateItem(it.id, { stock_delta: -1 });
+  plus.onclick = () => updateItem(it.id, { stock_delta: 1 });
+  stepper.append(minus, el("span", "stock-num", it.stock), plus);
+  stockCell.append(stepper, el("span", "unit", it.unit));
+  tr.appendChild(stockCell);
+
+  const stCell = el("td", "center");
+  stCell.appendChild(el("span", "stock-badge mono " + status.cls, status.label));
+  tr.appendChild(stCell);
+
+  const restockCell = el("td", "center");
+  const restock = el("button", "btn-outline mono", "⟳ +10");
+  restock.title = "Quick restock: add 10";
+  restock.onclick = () => updateItem(it.id, { stock_delta: 10 });
+  restockCell.appendChild(restock);
+  tr.appendChild(restockCell);
+
+  const delCell = el("td", "center");
+  const del = el("button", "icon-del", "🗑");
+  del.title = "Delete item";
+  del.onclick = () => deleteItem(it);
+  delCell.appendChild(del);
+  tr.appendChild(delCell);
+  return tr;
+}
+
+async function updateItem(id, change) {
+  const res = await postJson(`/api/inventory/${id}`, change, "PATCH");
+  $("invError").textContent = res.ok ? "" : "⚠ " + (await res.json()).detail;
+  await loadInventory(); // redraws the table and flashes the changed row
+}
+
+async function deleteItem(it) {
+  if (!confirm(`Delete "${it.name}" (${it.sku}) from inventory?`)) return;
+  const res = await fetch(`/api/inventory/${it.id}`, { method: "DELETE" });
+  $("invError").textContent = res.ok ? "" : "⚠ " + (await res.json()).detail;
+  await loadInventory();
+}
+
+// Filters redraw straight away
+$("search").oninput = () => drawInventory(true);
+$("catFilter").onchange = () => drawInventory(true);
+$("lowToggle").onclick = () => { lowOnly = !lowOnly; drawInventory(true); };
+
+// Quick add
 $("addForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const res = await postJson("/api/inventory", {
     name: $("newName").value,
-    brand: $("newBrand").value,
+    hindi_name: $("newHindi").value,
     category: $("newCategory").value,
     unit: $("newUnit").value,
     price: Number($("newPrice").value),
@@ -375,10 +558,11 @@ $("addForm").addEventListener("submit", async (e) => {
   });
   const msg = $("addMsg");
   if (res.ok) {
-    msg.textContent = `✅ Added "${$("newName").value}"`;
+    const data = await res.json();
+    msg.textContent = `✅ Added "${$("newName").value}" as ${data.sku}`;
     msg.className = "form-msg ok";
     $("addForm").reset();
-    loadInventory();
+    await loadInventory();
   } else {
     msg.textContent = "⚠ " + (await res.json()).detail;
     msg.className = "form-msg error";

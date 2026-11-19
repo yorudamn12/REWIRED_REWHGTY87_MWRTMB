@@ -89,8 +89,10 @@ def _call_gemini(image_bytes, mime_type, inventory):
     if not GEMINI_API_KEY:
         raise AIError("GEMINI_API_KEY is not set in .env")
 
-    # Inventory as short lines: "12 | Tata Sugar 1kg | Tata | staples"
-    inv_lines = "\n".join(f"{i['id']} | {i['name']} | {i['brand']} | {i['category']}" for i in inventory)
+    # Inventory as short lines: "12 | Tata Sugar 1kg | Tata | staples | चीनी"
+    inv_lines = "\n".join(
+        f"{i['id']} | {i['name']} | {i['brand']} | {i['category']} | {i.get('hindi_name') or ''}" for i in inventory
+    )
     prompt = PROMPT + "\n\nINVENTORY:\n" + inv_lines
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
