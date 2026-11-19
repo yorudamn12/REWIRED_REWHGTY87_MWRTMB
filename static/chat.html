@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#1f2c34">
-  <title>Sharma General Store</title>
+  <title>ListLens</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="chat">
@@ -14,29 +14,45 @@
     <button class="icon-btn" title="Back">
       <svg viewBox="0 0 24 24"><path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z"/></svg>
     </button>
-    <div class="avatar">SG</div>
+    <div class="avatar">LL</div>
     <div class="header-text">
-      <div class="title">Sharma General Store</div>
-      <div class="sub"><span id="headerSub">online</span><span id="mockBadge" class="mock-badge hidden">MOCK MODE</span></div>
+      <div class="title">ListLens</div>
+      <div class="sub"><span id="headerSub">online</span> · Sharma General Store<span id="mockBadge" class="mock-badge hidden">MOCK MODE</span></div>
     </div>
     <button class="icon-btn" title="Menu">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
     </button>
   </div>
 
-  <!-- First-time form: name + flat (saved in localStorage) -->
+  <!-- First-time form: name, society, block, flat (saved in localStorage) -->
   <form id="signup" class="signup hidden">
-    <h3 style="margin:0">Welcome! 👋</h3>
-    <div class="note">Tell the store who you are, then send a photo or screenshot of your grocery list.</div>
-    <input id="nameInput" placeholder="Your name (e.g. Priya)" required>
-    <input id="flatInput" placeholder="Flat number (e.g. B-204)" required>
+    <h3 style="margin:0">Welcome to ListLens! 👋</h3>
+    <div class="note">We pass your grocery list to Sharma General Store. First, tell us who you are and where to deliver.</div>
+    <label>Your name
+      <input id="nameInput" placeholder="e.g. Priya Sharma" required>
+    </label>
+    <label>Society
+      <select id="societyInput" required>
+        <option value="">Select your society</option>
+      </select>
+    </label>
+    <div class="two-cols">
+      <label>Block
+        <select id="blockInput" required>
+          <option value="">Block</option>
+        </select>
+      </label>
+      <label>Flat number
+        <input id="flatInput" placeholder="e.g. 204" required>
+      </label>
+    </div>
     <button class="btn-pill" type="submit">Start chatting</button>
   </form>
 
   <!-- Chat messages -->
   <div id="messages" class="messages hidden">
     <div class="chip">Today</div>
-    <div class="chip info">📷 Send a photo or screenshot of your grocery list. We'll check stock and prepare your order.</div>
+    <div class="chip info">🔍 ListLens connects you with Sharma General Store. Send a photo or screenshot of your grocery list and we'll check stock for you. The store owner can join this chat if needed.</div>
   </div>
 
   <!-- Attachment sheet (opens from the paperclip) -->
@@ -81,7 +97,7 @@
     </div>
     <div class="preview-img"><img id="previewImg" alt="Selected list"></div>
     <div class="preview-bottom">
-      <div class="to">➤ Sharma General Store</div>
+      <div class="to">➤ ListLens · Sharma General Store</div>
       <button class="round-btn" id="sendImageBtn" title="Send"></button>
     </div>
   </div>
@@ -95,7 +111,8 @@ const ICON_REPLY = '<svg viewBox="0 0 24 24"><path d="M10 9V5l-7 7 7 7v-4.1c5 0 
 const TICKS = '<svg viewBox="0 0 16 11"><path d="M1 6l3 3 6-7M6.5 9.5l.8.8L14 2" fill="none" stroke="#53bdeb" stroke-width="1.6"/></svg>';
 
 // ---------- State ----------
-let buyer = JSON.parse(localStorage.getItem("listlens_buyer") || "null"); // {name, flat}
+const STORAGE_KEY = "listlens_buyer_v2";
+let buyer = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); // {name, society, block, flat}
 let lastId = 0;          // id of the last message shown
 let lastSender = null;   // draw the bubble "tail" only on the first bubble of a group
 let typingEl = null;     // typing bubble shown while the list is being read
@@ -107,16 +124,23 @@ const textInput = $("textInput");
 const roundBtn = $("roundBtn");
 $("sendImageBtn").innerHTML = ICON_SEND;
 
-// Show MOCK MODE badge when the server is in mock mode
+// Settings from the server: mock badge + society/block dropdown options
 fetch("/api/config").then(r => r.json()).then(cfg => {
   if (cfg.mode === "mock") $("mockBadge").classList.remove("hidden");
+  for (const s of cfg.societies) $("societyInput").add(new Option(s, s));
+  for (const b of cfg.blocks) $("blockInput").add(new Option("Block " + b, b));
 });
 
 // ---------- Sign up (first time only) ----------
 $("signup").addEventListener("submit", (e) => {
   e.preventDefault();
-  buyer = { name: $("nameInput").value.trim(), flat: $("flatInput").value.trim() };
-  localStorage.setItem("listlens_buyer", JSON.stringify(buyer));
+  buyer = {
+    name: $("nameInput").value.trim(),
+    society: $("societyInput").value,
+    block: $("blockInput").value,
+    flat: $("flatInput").value.trim(),
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(buyer));
   startChat();
 });
 
@@ -143,15 +167,24 @@ async function poll() {
 
 // ---------- Rendering ----------
 function renderMessage(m) {
-  // A row holds one bubble: left for the store (bot), right for the buyer
+  // A row holds one bubble: right for the buyer, left for ListLens (bot) and the store owner (vendor)
+  const side = m.sender === "buyer" ? "buyer" : "bot";
   const row = document.createElement("div");
-  row.className = `row ${m.sender}`;
+  row.className = `row ${side}`;
   if (m.sender !== lastSender) row.classList.add("first"); // first in a group gets a tail
   lastSender = m.sender;
 
   const bubble = document.createElement("div");
-  bubble.className = `bubble ${m.sender}`;
+  bubble.className = `bubble ${side}`;
   const p = m.payload;
+
+  // A real person from the store stepped in: show their name on top, like a group chat
+  if (m.sender === "vendor") {
+    const name = document.createElement("div");
+    name.className = "sender-name";
+    name.textContent = "👤 Sharma General Store (owner)";
+    bubble.appendChild(name);
+  }
 
   if (m.type === "text") {
     if (p.quote) bubble.appendChild(renderQuote(p.quote)); // reply to a store message
@@ -309,6 +342,8 @@ async function uploadImage(file) {
   form.append("image", file);
   form.append("buyer_name", buyer.name);
   form.append("flat", buyer.flat);
+  form.append("society", buyer.society);
+  form.append("block", buyer.block);
   try {
     await fetch("/api/upload", { method: "POST", body: form });
   } catch (e) {

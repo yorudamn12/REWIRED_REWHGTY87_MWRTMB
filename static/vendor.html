@@ -11,25 +11,63 @@
   <div class="store-logo">SG</div>
   <div>
     <div class="h-title">Sharma General Store <span id="mockBadge" class="mock-badge hidden">MOCK MODE</span></div>
-    <div class="h-sub">ListLens · Vendor dashboard</div>
+    <div class="h-sub">Vendor dashboard · orders arrive through ListLens</div>
   </div>
   <div class="live"><span class="live-dot"></span>Live · updates every 2s</div>
 </div>
 
-<div class="vendor-layout">
-  <!-- Left 60%: orders -->
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab active" data-tab="ordersTab">🧾 Customer Orders <span id="pendingCount" class="count hidden"></span></button>
+  <button class="tab" data-tab="inventoryTab">📦 Inventory</button>
+</div>
+
+<!-- Tab 1: Orders -->
+<div id="ordersTab" class="tab-page">
   <div class="orders-col" id="orders">
     <div class="empty">No orders yet. Waiting for buyers to send their lists…</div>
   </div>
+</div>
 
-  <!-- Right 40%: live inventory -->
-  <div class="inventory-col">
-    <h2>📦 Live Inventory</h2>
+<!-- Tab 2: Inventory -->
+<div id="inventoryTab" class="tab-page hidden">
+  <div class="panel">
+    <h2>➕ Add a new item</h2>
+    <form id="addForm" class="add-form">
+      <input id="newName" placeholder="Item name (e.g. Amul Paneer 200g)" required>
+      <input id="newBrand" placeholder="Brand (e.g. Amul)">
+      <select id="newCategory" required></select>
+      <input id="newUnit" placeholder="Unit (pack, bottle…)">
+      <input id="newPrice" type="number" min="1" step="0.5" placeholder="Price ₹" required>
+      <input id="newStock" type="number" min="0" step="1" placeholder="Stock" required>
+      <button class="btn-confirm" type="submit">Add item</button>
+    </form>
+    <div id="addMsg" class="form-msg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>📦 Live Inventory <span class="hint">· stock 3 or less is red · changes flash yellow</span></h2>
     <table class="data" id="inventoryTable">
-      <thead><tr><th>Item</th><th>Category</th><th class="num">Price</th><th class="num">Stock</th></tr></thead>
+      <thead><tr><th>Item</th><th>Brand</th><th>Category</th><th class="num">Price</th><th class="num">Stock</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
+</div>
+
+<!-- Chat drawer: vendor reads the ListLens chat and can step in -->
+<div id="chatDrawer" class="chat-drawer hidden">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title" id="chatTitle">Chat</div>
+      <div class="drawer-sub">Customer ↔ ListLens bot. Type below to step in as the store.</div>
+    </div>
+    <button class="btn-ghost" id="closeChat">✕</button>
+  </div>
+  <div class="drawer-msgs" id="chatMsgs"></div>
+  <form class="drawer-input" id="chatForm">
+    <input id="chatInput" placeholder="Message the customer as Sharma General Store…" autocomplete="off">
+    <button class="btn-confirm" type="submit">Send</button>
+  </form>
 </div>
 
 <!-- Click a thumbnail to see the full screenshot -->
@@ -38,10 +76,13 @@
 <script>
 // ---------- State ----------
 let lastOrdersJson = "";   // re-draw orders only when something changed
-const rejectDrafts = {};   // orderId -> reason text being typed (kept across re-draws)
+const drafts = {};         // orderId -> {type: "confirm"|"reject", value} for the open inline box
 const errors = {};         // orderId -> error message from the server
 let prevStock = null;      // itemId -> stock, to flash rows that changed
+let chatBuyer = null;      // whose chat is open in the drawer
+let chatCount = -1;        // number of chat messages shown (re-draw when it changes)
 
+const TROUBLE = ["replaced", "skipped", "not_found", "out_of_stock"]; // item statuses that need a human look
 const STATUS_LABELS = {
   available: "Available", replaced: "Replaced", skipped: "Skipped",
   not_found: "Not found", out_of_stock: "Out of stock",
@@ -49,9 +90,7 @@ const STATUS_LABELS = {
   confirmed: "Confirmed", rejected: "Rejected", failed: "Failed",
 };
 
-fetch("/api/config").then(r => r.json()).then(cfg => {
-  if (cfg.mode === "mock") document.getElementById("mockBadge").classList.remove("hidden");
-});
+const $ = (id) => document.getElementById(id);
 
 // Small helper to build an element: el("div", "className", "text")
 function el(tag, className, text) {
@@ -60,19 +99,45 @@ function el(tag, className, text) {
   if (text !== undefined) e.textContent = text;
   return e;
 }
+function badge(status) { return el("span", "badge " + status, STATUS_LABELS[status] || status); }
 
-function badge(status) {
-  return el("span", "badge " + status, STATUS_LABELS[status] || status);
+// "2026-11-20" -> "Fri, 20 Nov"
+function niceDate(iso) {
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
 }
+// Date as YYYY-MM-DD, `plusDays` from today
+function isoDay(plusDays) {
+  const d = new Date();
+  d.setDate(d.getDate() + plusDays);
+  return d.toLocaleDateString("en-CA"); // en-CA gives YYYY-MM-DD
+}
+
+fetch("/api/config").then(r => r.json()).then(cfg => {
+  if (cfg.mode === "mock") $("mockBadge").classList.remove("hidden");
+  for (const c of cfg.categories) $("newCategory").add(new Option(c.replace("_", " "), c));
+});
+
+// ---------- Tabs ----------
+document.querySelectorAll(".tab").forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b === btn));
+    document.querySelectorAll(".tab-page").forEach(p => p.classList.toggle("hidden", p.id !== btn.dataset.tab));
+  };
+});
 
 // ---------- Orders ----------
 async function loadOrders(force) {
   const orders = await (await fetch("/api/vendor/orders")).json();
+
+  const pending = orders.filter(o => o.status === "pending_vendor").length;
+  $("pendingCount").textContent = pending;
+  $("pendingCount").classList.toggle("hidden", pending === 0);
+
   const json = JSON.stringify(orders);
   if (json === lastOrdersJson && !force) return; // nothing new
   lastOrdersJson = json;
 
-  const box = document.getElementById("orders");
+  const box = $("orders");
   box.innerHTML = "";
   if (orders.length === 0) {
     box.appendChild(el("div", "empty", "No orders yet. Waiting for buyers to send their lists…"));
@@ -83,23 +148,25 @@ async function loadOrders(force) {
 
 function renderOrder(o) {
   const card = el("div", "order-card");
+  const active = o.status === "pending_vendor";
+  const trouble = o.items.some(it => TROUBLE.includes(it.status));
+  if (active) card.classList.add("pending"); // blue left border = needs action
 
   // Top: thumbnail + buyer info + status
   const top = el("div", "order-top");
   const img = document.createElement("img");
   img.src = o.image_path;
   img.title = "Click to enlarge";
-  img.onclick = () => {
-    document.getElementById("lightboxImg").src = o.image_path;
-    document.getElementById("lightbox").classList.remove("hidden");
-  };
+  img.onclick = () => { $("lightboxImg").src = o.image_path; $("lightbox").classList.remove("hidden"); };
   top.appendChild(img);
 
   const meta = el("div", "order-meta");
-  meta.appendChild(el("div", "name", `${o.buyer_name} · Flat ${o.flat}`));
+  meta.appendChild(el("div", "name", o.buyer_name));
+  meta.appendChild(el("div", "info", `📍 Flat ${o.flat}, Block ${o.block || "-"}, ${o.society || "-"}`));
   meta.appendChild(el("div", "info", `Order #${o.id} · ${o.created_at.replace("T", " ").slice(0, 16)}`));
   const st = el("div", "info");
   st.appendChild(badge(o.status));
+  if (trouble) st.appendChild(el("span", "badge attention", "⚠ Needs attention"));
   meta.appendChild(st);
   top.appendChild(meta);
   card.appendChild(top);
@@ -110,6 +177,7 @@ function renderOrder(o) {
   const tbody = document.createElement("tbody");
   for (const it of o.items) {
     const tr = document.createElement("tr");
+    if (TROUBLE.includes(it.status)) tr.classList.add("trouble-row");
     const nameCell = document.createElement("td");
     nameCell.appendChild(el("span", "raw", `"${it.raw_text}"`));
     nameCell.appendChild(document.createTextNode(" → " + (it.matched_name || "—")));
@@ -127,56 +195,145 @@ function renderOrder(o) {
   table.appendChild(tbody);
   card.appendChild(table);
   card.appendChild(el("div", "order-total", `Total: ₹${o.total}`));
+  if (o.delivery_date) card.appendChild(el("div", "delivery", `🚚 Delivery on ${niceDate(o.delivery_date)}`));
 
-  // Actions: only pending_vendor orders can be confirmed / rejected
-  const active = o.status === "pending_vendor";
+  // Actions
   const actions = el("div", "order-actions");
-  if (active) card.classList.add("pending"); // blue left border = needs action
   const confirmBtn = el("button", "btn-confirm", "✔ Confirm");
   const rejectBtn = el("button", "btn-red", "✖ Reject");
   confirmBtn.disabled = rejectBtn.disabled = !active;
-  confirmBtn.onclick = () => confirmOrder(o.id);
-  rejectBtn.onclick = () => { rejectDrafts[o.id] = rejectDrafts[o.id] || ""; loadOrders(true); };
-  actions.appendChild(confirmBtn);
-  actions.appendChild(rejectBtn);
+  confirmBtn.onclick = () => { drafts[o.id] = { type: "confirm", value: isoDay(1) }; loadOrders(true); };
+  rejectBtn.onclick = () => { drafts[o.id] = { type: "reject", value: "" }; loadOrders(true); };
+  actions.append(confirmBtn, rejectBtn);
 
-  // Inline reason box (instead of a browser prompt)
-  if (active && rejectDrafts[o.id] !== undefined) {
-    const rbox = el("div", "reject-box");
-    const input = document.createElement("input");
-    input.placeholder = "Reason, e.g. Shop closed today";
-    input.value = rejectDrafts[o.id];
-    input.oninput = () => rejectDrafts[o.id] = input.value;
-    const send = el("button", "btn-red", "Send rejection");
-    send.onclick = () => rejectOrder(o.id);
-    const cancel = el("button", "btn-ghost", "Cancel");
-    cancel.onclick = () => { delete rejectDrafts[o.id]; loadOrders(true); };
-    rbox.append(input, send, cancel);
-    actions.appendChild(rbox);
-    setTimeout(() => input.focus(), 0);
+  // Orders where something was replaced/missing get a "View chat" button for a human check
+  if (trouble) {
+    const chatBtn = el("button", "btn-chat", "💬 View chat");
+    chatBtn.onclick = () => openChat(o.buyer_name);
+    actions.appendChild(chatBtn);
   }
+
+  // Inline box: delivery date (confirm) or reason (reject) — no browser popups
+  const d = drafts[o.id];
+  if (active && d) actions.appendChild(d.type === "confirm" ? confirmBox(o.id, d) : rejectBox(o.id, d));
   if (errors[o.id]) actions.appendChild(el("div", "error", "⚠ " + errors[o.id]));
   card.appendChild(actions);
   return card;
 }
 
+function confirmBox(id, d) {
+  const box = el("div", "inline-box");
+  box.appendChild(el("span", "", "🚚 Delivery date:"));
+  const input = document.createElement("input");
+  input.type = "date";
+  input.min = isoDay(0);
+  input.value = d.value;
+  input.onchange = () => d.value = input.value;
+  const ok = el("button", "btn-confirm", "Confirm order");
+  ok.onclick = () => confirmOrder(id);
+  const cancel = el("button", "btn-ghost", "Cancel");
+  cancel.onclick = () => { delete drafts[id]; loadOrders(true); };
+  box.append(input, ok, cancel);
+  return box;
+}
+
+function rejectBox(id, d) {
+  const box = el("div", "inline-box");
+  const input = document.createElement("input");
+  input.className = "grow";
+  input.placeholder = "Reason, e.g. Shop closed today";
+  input.value = d.value;
+  input.oninput = () => d.value = input.value;
+  const send = el("button", "btn-red", "Send rejection");
+  send.onclick = () => rejectOrder(id);
+  const cancel = el("button", "btn-ghost", "Cancel");
+  cancel.onclick = () => { delete drafts[id]; loadOrders(true); };
+  box.append(input, send, cancel);
+  setTimeout(() => input.focus(), 0);
+  return box;
+}
+
+async function postJson(url, body) {
+  return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+
 async function confirmOrder(id) {
-  const res = await fetch(`/api/vendor/orders/${id}/confirm`, { method: "POST" });
-  if (res.ok) delete errors[id];
+  const res = await postJson(`/api/vendor/orders/${id}/confirm`, { delivery_date: drafts[id].value });
+  if (res.ok) { delete errors[id]; delete drafts[id]; }
   else errors[id] = (await res.json()).detail; // e.g. "Not enough stock for ..."
   await refresh(true);
 }
 
 async function rejectOrder(id) {
-  const res = await fetch(`/api/vendor/orders/${id}/reject`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ reason: rejectDrafts[id] || "" }),
-  });
-  if (res.ok) { delete errors[id]; delete rejectDrafts[id]; }
+  const res = await postJson(`/api/vendor/orders/${id}/reject`, { reason: drafts[id].value });
+  if (res.ok) { delete errors[id]; delete drafts[id]; }
   else errors[id] = (await res.json()).detail;
   await refresh(true);
 }
+
+// ---------- Chat drawer (human intervention) ----------
+function openChat(buyerName) {
+  chatBuyer = buyerName;
+  chatCount = -1;
+  $("chatTitle").textContent = `💬 ${buyerName}`;
+  $("chatDrawer").classList.remove("hidden");
+  loadChat();
+}
+$("closeChat").onclick = () => { chatBuyer = null; $("chatDrawer").classList.add("hidden"); };
+
+async function loadChat() {
+  if (!chatBuyer) return;
+  const msgs = await (await fetch(`/api/messages?buyer=${encodeURIComponent(chatBuyer)}&after=0`)).json();
+  const signature = msgs.length + JSON.stringify(msgs.at(-1) || {});
+  if (signature === chatCount) return; // nothing new
+  chatCount = signature;
+
+  const box = $("chatMsgs");
+  box.innerHTML = "";
+  for (const m of msgs) box.appendChild(renderChatMsg(m));
+  box.scrollTop = box.scrollHeight;
+}
+
+// Show each chat message in a simple, readable way
+function renderChatMsg(m) {
+  const who = { buyer: "Customer", bot: "ListLens bot", vendor: "You (store)" }[m.sender];
+  const row = el("div", "cm " + m.sender);
+  row.appendChild(el("div", "cm-who", `${who} · ${m.created_at.slice(11, 16)}`));
+  const body = el("div", "cm-body");
+  const p = m.payload;
+
+  if (m.type === "text") {
+    if (p.quote) body.appendChild(el("div", "cm-quote", "↩ " + p.quote.text));
+    body.appendChild(document.createTextNode(p.text));
+  } else if (m.type === "image") {
+    const img = document.createElement("img");
+    img.src = p.url;
+    img.onclick = () => { $("lightboxImg").src = p.url; $("lightbox").classList.remove("hidden"); };
+    body.appendChild(img);
+  } else if (m.type === "summary") {
+    body.appendChild(el("div", "", "🧾 Items available:"));
+    for (const it of p.items) body.appendChild(el("div", "", `• ${it.name} × ${it.qty} — ₹${it.price}`));
+    body.appendChild(el("b", "", `Total so far ₹${p.total}`));
+  } else if (m.type === "choice") {
+    body.appendChild(el("div", "", "⚠ " + p.text));
+    const labels = [...p.options.map(o => `${o.label} — ₹${o.price}`), "Skip this item"];
+    for (const label of labels) {
+      body.appendChild(el("div", label === p.chosen ? "cm-opt chosen" : "cm-opt", (label === p.chosen ? "✓ " : "○ ") + label));
+    }
+    if (!p.chosen) body.appendChild(el("i", "", "Customer has not answered yet"));
+  }
+  row.appendChild(body);
+  return row;
+}
+
+$("chatForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("chatInput").value.trim();
+  if (!text || !chatBuyer) return;
+  $("chatInput").value = "";
+  await postJson("/api/vendor/message", { buyer_name: chatBuyer, text });
+  loadChat();
+});
 
 // ---------- Inventory ----------
 async function loadInventory() {
@@ -185,9 +342,10 @@ async function loadInventory() {
   tbody.innerHTML = "";
   for (const it of items) {
     const tr = document.createElement("tr");
-    if (it.stock <= 3) tr.classList.add("low");                       // low stock -> red
-    if (prevStock && prevStock[it.id] !== it.stock) tr.classList.add("flash"); // changed -> flash
+    if (it.stock <= 3) tr.classList.add("low");                                // low stock -> red
+    if (prevStock && prevStock[it.id] !== it.stock) tr.classList.add("flash"); // changed or new -> flash
     tr.appendChild(el("td", "", it.name));
+    tr.appendChild(el("td", "", it.brand));
     tr.appendChild(el("td", "", it.category.replace("_", " ")));
     tr.appendChild(el("td", "num", `₹${it.price}`));
     tr.appendChild(el("td", "num", it.stock));
@@ -196,9 +354,31 @@ async function loadInventory() {
   prevStock = Object.fromEntries(items.map(i => [i.id, i.stock]));
 }
 
+$("addForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const res = await postJson("/api/inventory", {
+    name: $("newName").value,
+    brand: $("newBrand").value,
+    category: $("newCategory").value,
+    unit: $("newUnit").value,
+    price: Number($("newPrice").value),
+    stock: Number($("newStock").value),
+  });
+  const msg = $("addMsg");
+  if (res.ok) {
+    msg.textContent = `✅ Added "${$("newName").value}"`;
+    msg.className = "form-msg ok";
+    $("addForm").reset();
+    loadInventory();
+  } else {
+    msg.textContent = "⚠ " + (await res.json()).detail;
+    msg.className = "form-msg error";
+  }
+});
+
 // ---------- Poll every 2 seconds ----------
 async function refresh(force) {
-  await Promise.all([loadOrders(force), loadInventory()]);
+  await Promise.all([loadOrders(force), loadInventory(), loadChat()]);
 }
 refresh();
 setInterval(refresh, 2000);

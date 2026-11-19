@@ -1,10 +1,12 @@
 """Business rules: stock check, alternatives, totals, buyer choices, vendor confirm/reject."""
 
 import json
+from datetime import date
 
 from app.db import add_message, bot_text, get_inventory
 
 STORE_NAME = "Sharma General Store"
+APP_NAME = "ListLens"  # the assistant that sits between buyer and store
 
 
 def find_alternatives(inventory, original, category, qty):
@@ -126,7 +128,7 @@ def choose(conn, order_item_id, chosen_item_id):
     question = _mark_choice_message(conn, order["buyer_name"], order_item_id, chosen_label)
     # Like tapping a quick-reply button in a chat app: the buyer "sends" the label, quoting the question
     add_message(conn, order["buyer_name"], "buyer", "text",
-                {"text": chosen_label, "quote": {"title": STORE_NAME, "text": question}})
+                {"text": chosen_label, "quote": {"title": APP_NAME, "text": question}})
     total = recompute_total(conn, order["id"])
 
     # Any choices still open for this order?
@@ -166,13 +168,25 @@ def _final_lines(conn, order_id):
     return [dict(r) for r in rows]
 
 
-def confirm_order(conn, order_id):
-    """Vendor confirms. Re-check stock, reduce it, tell the buyer. Returns an error string or None."""
+def address_text(order):
+    """e.g. 'Flat 204, Block B, Green Meadows Apartments'"""
+    return f"Flat {order['flat']}, Block {order['block']}, {order['society']}"
+
+
+def confirm_order(conn, order_id, delivery_date):
+    """Vendor confirms with a delivery date (YYYY-MM-DD).
+    Re-check stock, reduce it, tell the buyer. Returns an error string or None."""
     order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
     if not order:
         return "Order not found"
     if order["status"] != "pending_vendor":
         return f"Order is {order['status']}, cannot confirm"
+    try:
+        day = date.fromisoformat(delivery_date)
+    except (TypeError, ValueError):
+        return "Please pick a delivery date"
+    if day < date.today():
+        return "Delivery date cannot be in the past"
 
     lines = _final_lines(conn, order_id)
 
@@ -186,12 +200,14 @@ def confirm_order(conn, order_id):
 
     for inv_id, qty in need.items():
         conn.execute("UPDATE inventory SET stock = stock - ? WHERE id = ?", (qty, inv_id))
-    set_status(conn, order_id, "confirmed")
+    conn.execute("UPDATE orders SET status = 'confirmed', delivery_date = ? WHERE id = ?",
+                 (day.isoformat(), order_id))
 
     item_list = "\n".join(f"• {l['name']} x{l['qty']} — ₹{l['line_price']:g}" for l in lines)
+    nice_day = day.strftime("%a, %d %b")  # e.g. Fri, 20 Nov
     bot_text(conn, order["buyer_name"],
-             f"✅ Order confirmed by {STORE_NAME}. Total ₹{order['total']:g}. "
-             f"Delivery to flat {order['flat']}.\n{item_list}")
+             f"✅ Order confirmed by {STORE_NAME}. Total ₹{order['total']:g}.\n"
+             f"🚚 Delivery on {nice_day} to {address_text(order)}.\n{item_list}")
     return None
 
 

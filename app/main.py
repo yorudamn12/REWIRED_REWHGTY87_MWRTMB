@@ -42,15 +42,27 @@ def vendor_page():
     return RedirectResponse("/static/vendor.html")
 
 
+# Example housing societies served by the store (shown as a dropdown on sign-up)
+SOCIETIES = [
+    "Green Meadows Apartments",
+    "Sunrise Heights",
+    "Lakeview Residency",
+    "Palm Grove Enclave",
+    "Silver Oak Towers",
+]
+BLOCKS = ["A", "B", "C", "D", "E", "F"]
+
+
 @app.get("/api/config")
 def config():
-    return {"mode": ai.AI_MODE}
+    return {"mode": ai.AI_MODE, "societies": SOCIETIES, "blocks": BLOCKS, "categories": ai.CATEGORIES}
 
 
 # ---------- Buyer side ----------
 
 @app.post("/api/upload")
-def upload(image: UploadFile = File(...), buyer_name: str = Form(...), flat: str = Form(...)):
+def upload(image: UploadFile = File(...), buyer_name: str = Form(...), flat: str = Form(...),
+           society: str = Form(""), block: str = Form("")):
     """Buyer sends a screenshot. We save it, read it with AI, and reply in the chat."""
     # 1. Save the image file with a unique name
     ext = Path(image.filename or "").suffix.lower() or ".jpg"
@@ -63,8 +75,9 @@ def upload(image: UploadFile = File(...), buyer_name: str = Form(...), flat: str
     try:
         # 2. Create the order (status "reading") and show the image in the chat
         cur = conn.execute(
-            "INSERT INTO orders (buyer_name, flat, status, total, image_path, created_at) VALUES (?, ?, 'reading', 0, ?, ?)",
-            (buyer_name, flat, image_url, now()),
+            """INSERT INTO orders (buyer_name, flat, society, block, status, total, image_path, created_at)
+               VALUES (?, ?, ?, ?, 'reading', 0, ?, ?)""",
+            (buyer_name, flat, society, block, image_url, now()),
         )
         order_id = cur.lastrowid
         add_message(conn, buyer_name, "buyer", "image", {"url": image_url})
@@ -116,13 +129,20 @@ class TextBody(BaseModel):
 
 @app.post("/api/text")
 def send_text(body: TextBody):
-    """Buyer typed a normal text message. The bot only understands photos, so it replies with a hint."""
+    """Buyer typed a normal text message.
+    If an order is still open, the message is for the store owner (they read it on the dashboard),
+    so the bot stays quiet. Otherwise the bot replies with a hint to send a photo."""
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "Empty message")
     conn = get_conn()
     add_message(conn, body.buyer_name, "buyer", "text", {"text": text})
-    bot_text(conn, body.buyer_name, "Hi! 👋 Please send a photo or screenshot of your grocery list 📷 and I'll prepare your order.")
+    open_order = conn.execute(
+        "SELECT 1 FROM orders WHERE buyer_name = ? AND status IN ('awaiting_buyer', 'pending_vendor')",
+        (body.buyer_name,),
+    ).fetchone()
+    if not open_order:
+        bot_text(conn, body.buyer_name, "Hi! 👋 Please send a photo or screenshot of your grocery list 📷 and I'll prepare your order.")
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -174,11 +194,15 @@ def vendor_orders():
     return result
 
 
+class ConfirmBody(BaseModel):
+    delivery_date: str = ""  # YYYY-MM-DD, picked by the vendor
+
+
 @app.post("/api/vendor/orders/{order_id}/confirm")
-def confirm(order_id: int):
+def confirm(order_id: int, body: ConfirmBody):
     conn = get_conn()
     try:
-        error = logic.confirm_order(conn, order_id)
+        error = logic.confirm_order(conn, order_id, body.delivery_date)
         if error:
             raise HTTPException(400, error)
         conn.commit()
@@ -204,9 +228,55 @@ def reject(order_id: int, body: RejectBody):
         conn.close()
 
 
+class VendorMessageBody(BaseModel):
+    buyer_name: str
+    text: str
+
+
+@app.post("/api/vendor/message")
+def vendor_message(body: VendorMessageBody):
+    """Human intervention: the shop owner types directly into the buyer's chat."""
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(400, "Empty message")
+    conn = get_conn()
+    add_message(conn, body.buyer_name, "vendor", "text", {"text": text})
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
 @app.get("/api/inventory")
 def inventory():
     conn = get_conn()
     items = get_inventory(conn)
     conn.close()
     return items
+
+
+class NewItemBody(BaseModel):
+    name: str
+    brand: str = ""
+    category: str
+    unit: str = "pack"
+    price: float
+    stock: int
+
+
+@app.post("/api/inventory")
+def add_item(body: NewItemBody):
+    """Vendor adds a new product to the inventory."""
+    if not body.name.strip():
+        raise HTTPException(400, "Name is required")
+    if body.category not in ai.CATEGORIES:
+        raise HTTPException(400, "Unknown category")
+    if body.price <= 0 or body.stock < 0:
+        raise HTTPException(400, "Price must be above 0 and stock cannot be negative")
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO inventory (name, brand, category, unit, price, stock) VALUES (?, ?, ?, ?, ?, ?)",
+        (body.name.strip(), body.brand.strip(), body.category, body.unit.strip() or "pack", body.price, body.stock),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "id": cur.lastrowid}

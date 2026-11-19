@@ -35,7 +35,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY,
             buyer_name TEXT, flat TEXT, status TEXT, total REAL,
-            image_path TEXT, created_at TEXT
+            image_path TEXT, created_at TEXT,
+            society TEXT, block TEXT, delivery_date TEXT
         );
         CREATE TABLE IF NOT EXISTS order_items (
             id INTEGER PRIMARY KEY,
@@ -49,6 +50,12 @@ def init_db():
             payload_json TEXT, created_at TEXT
         );
     """)
+    # Older database files may miss the newer order columns: add them if needed
+    existing = [r["name"] for r in conn.execute("PRAGMA table_info(orders)")]
+    for col in ("society", "block", "delivery_date"):
+        if col not in existing:
+            conn.execute(f"ALTER TABLE orders ADD COLUMN {col} TEXT")
+
     # Seed only if inventory is empty (so restarting the server keeps stock changes)
     count = conn.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
     if count == 0:
@@ -67,7 +74,8 @@ def get_inventory(conn):
 
 
 def add_message(conn, buyer_name, sender, msg_type, payload):
-    """Save one chat message. payload is a dict; we store it as JSON text."""
+    """Save one chat message. payload is a dict; we store it as JSON text.
+    sender: "buyer", "bot" (ListLens assistant) or "vendor" (the shop owner stepping in)."""
     cur = conn.execute(
         "INSERT INTO messages (buyer_name, sender, type, payload_json, created_at) VALUES (?, ?, ?, ?, ?)",
         (buyer_name, sender, msg_type, json.dumps(payload), now()),
