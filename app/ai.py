@@ -39,7 +39,7 @@ MOCK_ITEMS = [
      "match_name": "Head & Shoulders Anti-Dandruff Shampoo 340ml", "category": "personal_care"},  # stock 0
     {"raw_text": "Amul butter x2", "qty": 2, "match_name": "Amul Butter 100g", "category": "dairy"},
     {"raw_text": "Fortune oil 1L", "qty": 1, "match_name": "Fortune Sunflower Oil 1L", "category": "staples"},
-    {"raw_text": "paneer 200g", "qty": 1, "match_name": None, "category": "dairy"},  # not in inventory
+    {"raw_text": "kesar 1g", "qty": 1, "match_name": None, "category": "staples"},  # not in inventory
 ]
 
 # Remember answers by image fingerprint, so the same screenshot never uses the API twice
