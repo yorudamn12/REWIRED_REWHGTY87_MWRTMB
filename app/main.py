@@ -109,6 +109,25 @@ def messages(buyer: str, after: int = 0):
     } for r in rows]
 
 
+class TextBody(BaseModel):
+    buyer_name: str
+    text: str
+
+
+@app.post("/api/text")
+def send_text(body: TextBody):
+    """Buyer typed a normal text message. The bot only understands photos, so it replies with a hint."""
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(400, "Empty message")
+    conn = get_conn()
+    add_message(conn, body.buyer_name, "buyer", "text", {"text": text})
+    bot_text(conn, body.buyer_name, "Hi! 👋 Please send a photo or screenshot of your grocery list 📷 and I'll prepare your order.")
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
 class ChooseBody(BaseModel):
     order_item_id: int
     chosen_item_id: int | None = None  # None means "Skip"

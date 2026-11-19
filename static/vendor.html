@@ -8,8 +8,12 @@
 </head>
 <body class="vendor">
 <div class="vendor-header">
-  Sharma General Store — Orders <span id="mockBadge" class="mock-badge hidden">MOCK MODE</span>
-  <div class="sub">ListLens vendor dashboard · updates every 2 seconds</div>
+  <div class="store-logo">SG</div>
+  <div>
+    <div class="h-title">Sharma General Store <span id="mockBadge" class="mock-badge hidden">MOCK MODE</span></div>
+    <div class="h-sub">ListLens · Vendor dashboard</div>
+  </div>
+  <div class="live"><span class="live-dot"></span>Live · updates every 2s</div>
 </div>
 
 <div class="vendor-layout">
@@ -127,7 +131,8 @@ function renderOrder(o) {
   // Actions: only pending_vendor orders can be confirmed / rejected
   const active = o.status === "pending_vendor";
   const actions = el("div", "order-actions");
-  const confirmBtn = el("button", "btn-green", "✔ Confirm");
+  if (active) card.classList.add("pending"); // blue left border = needs action
+  const confirmBtn = el("button", "btn-confirm", "✔ Confirm");
   const rejectBtn = el("button", "btn-red", "✖ Reject");
   confirmBtn.disabled = rejectBtn.disabled = !active;
   confirmBtn.onclick = () => confirmOrder(o.id);
@@ -144,7 +149,7 @@ function renderOrder(o) {
     input.oninput = () => rejectDrafts[o.id] = input.value;
     const send = el("button", "btn-red", "Send rejection");
     send.onclick = () => rejectOrder(o.id);
-    const cancel = el("button", "btn-green", "Cancel");
+    const cancel = el("button", "btn-ghost", "Cancel");
     cancel.onclick = () => { delete rejectDrafts[o.id]; loadOrders(true); };
     rbox.append(input, send, cancel);
     actions.appendChild(rbox);

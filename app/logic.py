@@ -108,9 +108,10 @@ def choose(conn, order_item_id, chosen_item_id):
         return "Already chosen"
     order = conn.execute("SELECT * FROM orders WHERE id = ?", (oi["order_id"],)).fetchone()
 
+    # chosen_label must match the button text on the chat page exactly
     if chosen_item_id is None:
         conn.execute("UPDATE order_items SET status = 'skipped', line_price = 0 WHERE id = ?", (order_item_id,))
-        chosen_label = "Skipped"
+        chosen_label = "Skip this item"
     else:
         if chosen_item_id not in json.loads(oi["alternatives_json"] or "[]"):
             return "That option is not allowed"
@@ -120,9 +121,12 @@ def choose(conn, order_item_id, chosen_item_id):
             "UPDATE order_items SET status = 'replaced', chosen_item_id = ?, line_price = ? WHERE id = ?",
             (chosen_item_id, price, order_item_id),
         )
-        chosen_label = f"{alt['name']} (₹{price:g})"
+        chosen_label = f"{alt['name']} — ₹{price:g}"
 
-    _mark_choice_message(conn, order["buyer_name"], order_item_id, chosen_label)
+    question = _mark_choice_message(conn, order["buyer_name"], order_item_id, chosen_label)
+    # Like tapping a quick-reply button in a chat app: the buyer "sends" the label, quoting the question
+    add_message(conn, order["buyer_name"], "buyer", "text",
+                {"text": chosen_label, "quote": {"title": STORE_NAME, "text": question}})
     total = recompute_total(conn, order["id"])
 
     # Any choices still open for this order?
@@ -137,7 +141,8 @@ def choose(conn, order_item_id, chosen_item_id):
 
 
 def _mark_choice_message(conn, buyer_name, order_item_id, chosen_label):
-    """Save the buyer's pick inside the choice message, so buttons stay disabled after a page reload."""
+    """Save the buyer's pick inside the choice message, so buttons stay disabled after a page reload.
+    Returns the question text (used for the quoted reply)."""
     rows = conn.execute("SELECT id, payload_json FROM messages WHERE buyer_name = ? AND type = 'choice'",
                         (buyer_name,)).fetchall()
     for r in rows:
@@ -145,6 +150,8 @@ def _mark_choice_message(conn, buyer_name, order_item_id, chosen_label):
         if payload.get("order_item_id") == order_item_id:
             payload["chosen"] = chosen_label
             conn.execute("UPDATE messages SET payload_json = ? WHERE id = ?", (json.dumps(payload), r["id"]))
+            return payload["text"]
+    return ""
 
 
 def _final_lines(conn, order_id):
