@@ -12,7 +12,8 @@ APP_NAME = "ListLens"  # the assistant that sits between buyer and store
 def find_alternatives(inventory, original, category, qty):
     """Up to 2 in-stock items from the same category.
     original = the matched inventory item (or None if nothing matched).
-    Sort: same brand first, then closest price (or cheapest if there is no original).
+    Sort: same brand first, then most words in common with the original name
+    (so oil is replaced by oil, not dal), then closest price (or cheapest if there is no original).
     """
     candidates = [
         i for i in inventory
@@ -21,10 +22,21 @@ def find_alternatives(inventory, original, category, qty):
         and (original is None or i["id"] != original["id"])
     ]
     if original:
-        candidates.sort(key=lambda i: (i["brand"] != original["brand"], abs(i["price"] - original["price"])))
+        words = _name_words(original)
+        candidates.sort(key=lambda i: (
+            i["brand"] != original["brand"],      # False (same brand) sorts first
+            -len(words & _name_words(i)),         # more shared words first
+            abs(i["price"] - original["price"]),  # then closest price
+        ))
     else:
         candidates.sort(key=lambda i: i["price"])
     return candidates[:2]
+
+
+def _name_words(item):
+    """Words in a product name, without the brand. 'Fortune Sunflower Oil 1L' -> {'sunflower', 'oil', '1l'}"""
+    brand_words = set(item["brand"].lower().split())
+    return {w for w in item["name"].lower().split() if w not in brand_words and w != "&"}
 
 
 def build_order(conn, order_id, buyer_name, ai_items):
@@ -179,6 +191,8 @@ def confirm_order(conn, order_id, delivery_date):
     order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
     if not order:
         return "Order not found"
+    if order["status"] == "waiting_customer":
+        return "Waiting for the customer's reply. Confirm after they answer."
     if order["status"] != "pending_vendor":
         return f"Order is {order['status']}, cannot confirm"
     try:
@@ -216,7 +230,8 @@ def reject_order(conn, order_id, reason):
     order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
     if not order:
         return "Order not found"
-    if order["status"] != "pending_vendor":
+    # Rejecting is also allowed while waiting for the customer's reply (in case they never answer)
+    if order["status"] not in ("pending_vendor", "waiting_customer"):
         return f"Order is {order['status']}, cannot reject"
     set_status(conn, order_id, "rejected")
     bot_text(conn, order["buyer_name"], f"❌ Order rejected: {reason or 'No reason given'}")

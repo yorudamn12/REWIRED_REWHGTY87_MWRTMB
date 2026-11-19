@@ -130,13 +130,19 @@ class TextBody(BaseModel):
 @app.post("/api/text")
 def send_text(body: TextBody):
     """Buyer typed a normal text message.
-    If an order is still open, the message is for the store owner (they read it on the dashboard),
-    so the bot stays quiet. Otherwise the bot replies with a hint to send a photo."""
+    - If the store asked a question (order is 'waiting_customer'), this is the answer:
+      the order goes back to the vendor ('pending_vendor') so they can decide.
+    - If any other order is still open, the message is for the store owner, so the bot stays quiet.
+    - Otherwise the bot replies with a hint to send a photo."""
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "Empty message")
     conn = get_conn()
     add_message(conn, body.buyer_name, "buyer", "text", {"text": text})
+    conn.execute(
+        "UPDATE orders SET status = 'pending_vendor' WHERE buyer_name = ? AND status = 'waiting_customer'",
+        (body.buyer_name,),
+    )
     open_order = conn.execute(
         "SELECT 1 FROM orders WHERE buyer_name = ? AND status IN ('awaiting_buyer', 'pending_vendor')",
         (body.buyer_name,),
@@ -189,7 +195,16 @@ def vendor_orders():
                 "price": r["line_price"],
                 "status": r["status"],
             })
-        result.append({**dict(o), "items": items})
+        # Who spoke last in this buyer's chat, and did the store ever step in?
+        # Used to show "Customer replied" on the dashboard.
+        last = conn.execute(
+            "SELECT sender FROM messages WHERE buyer_name = ? ORDER BY id DESC LIMIT 1", (o["buyer_name"],)
+        ).fetchone()
+        store_spoke = conn.execute(
+            "SELECT 1 FROM messages WHERE buyer_name = ? AND sender = 'vendor'", (o["buyer_name"],)
+        ).fetchone()
+        result.append({**dict(o), "items": items,
+                       "customer_replied": bool(store_spoke) and last is not None and last["sender"] == "buyer"})
     conn.close()
     return result
 
@@ -231,16 +246,23 @@ def reject(order_id: int, body: RejectBody):
 class VendorMessageBody(BaseModel):
     buyer_name: str
     text: str
+    order_id: int | None = None  # the order the vendor is looking at
 
 
 @app.post("/api/vendor/message")
 def vendor_message(body: VendorMessageBody):
-    """Human intervention: the shop owner types directly into the buyer's chat."""
+    """Human intervention: the shop owner types directly into the buyer's chat.
+    If that order was waiting for the vendor's OK, it is put on hold until the customer replies."""
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "Empty message")
     conn = get_conn()
     add_message(conn, body.buyer_name, "vendor", "text", {"text": text})
+    if body.order_id:
+        conn.execute(
+            "UPDATE orders SET status = 'waiting_customer' WHERE id = ? AND status = 'pending_vendor'",
+            (body.order_id,),
+        )
     conn.commit()
     conn.close()
     return {"ok": True}

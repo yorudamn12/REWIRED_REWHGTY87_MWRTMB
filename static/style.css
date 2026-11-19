@@ -318,6 +318,7 @@ body.chat {
   caret-color: var(--accent);
 }
 .input-pill input::placeholder { color: var(--muted); }
+.input-pill input[placeholder^="Reply"]::placeholder { color: #06cf9c; }  /* highlight when the store asked */
 .round-btn {
   width: 50px; height: 50px;
   border-radius: 50%;
@@ -449,6 +450,9 @@ body.vendor {
 
 /* Order extras */
 .badge.attention { background: #fff1e0; color: #b45309; margin-left: 6px; }
+.badge.waiting_customer { background: #f3e8ff; color: #7e22ce; }
+.badge.replied { background: #dcfce7; color: #15803d; margin-left: 6px; }
+.hold-note { width: 100%; font-size: 13px; color: #7e22ce; }
 tr.trouble-row td { background: #fffaf2; }
 .delivery { text-align: right; color: var(--v-green); font-weight: 600; margin-top: 4px; }
 .inline-box { display: flex; gap: 8px; align-items: center; width: 100%; padding: 10px; background: #f7f8fa; border-radius: 8px; }

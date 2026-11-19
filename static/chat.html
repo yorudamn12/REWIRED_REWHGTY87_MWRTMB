@@ -210,6 +210,9 @@ function renderMessage(m) {
 
   row.appendChild(bubble);
   messagesEl.appendChild(row);
+
+  // If the store owner just asked something, invite the customer to answer
+  textInput.placeholder = m.sender === "vendor" ? "Reply to Sharma General Store…" : "Message";
   if (typingEl) messagesEl.appendChild(typingEl); // keep the typing bubble at the bottom
 }
 

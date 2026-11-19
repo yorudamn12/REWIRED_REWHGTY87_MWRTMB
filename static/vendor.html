@@ -59,7 +59,7 @@
   <div class="drawer-head">
     <div>
       <div class="drawer-title" id="chatTitle">Chat</div>
-      <div class="drawer-sub">Customer ↔ ListLens bot. Type below to step in as the store.</div>
+      <div class="drawer-sub">Customer ↔ ListLens bot. Type below to step in as the store. Asking a question puts the order on hold until the customer replies.</div>
     </div>
     <button class="btn-ghost" id="closeChat">✕</button>
   </div>
@@ -80,6 +80,7 @@ const drafts = {};         // orderId -> {type: "confirm"|"reject", value} for t
 const errors = {};         // orderId -> error message from the server
 let prevStock = null;      // itemId -> stock, to flash rows that changed
 let chatBuyer = null;      // whose chat is open in the drawer
+let chatOrderId = null;    // the order the drawer was opened from
 let chatCount = -1;        // number of chat messages shown (re-draw when it changes)
 
 const TROUBLE = ["replaced", "skipped", "not_found", "out_of_stock"]; // item statuses that need a human look
@@ -87,6 +88,7 @@ const STATUS_LABELS = {
   available: "Available", replaced: "Replaced", skipped: "Skipped",
   not_found: "Not found", out_of_stock: "Out of stock",
   reading: "Reading", awaiting_buyer: "Waiting for buyer", pending_vendor: "Needs your OK",
+  waiting_customer: "⏳ Waiting for customer reply",
   confirmed: "Confirmed", rejected: "Rejected", failed: "Failed",
 };
 
@@ -148,7 +150,8 @@ async function loadOrders(force) {
 
 function renderOrder(o) {
   const card = el("div", "order-card");
-  const active = o.status === "pending_vendor";
+  const active = o.status === "pending_vendor";       // vendor can confirm
+  const waiting = o.status === "waiting_customer";    // vendor asked a question, customer hasn't answered
   const trouble = o.items.some(it => TROUBLE.includes(it.status));
   if (active) card.classList.add("pending"); // blue left border = needs action
 
@@ -167,6 +170,7 @@ function renderOrder(o) {
   const st = el("div", "info");
   st.appendChild(badge(o.status));
   if (trouble) st.appendChild(el("span", "badge attention", "⚠ Needs attention"));
+  if (active && o.customer_replied) st.appendChild(el("span", "badge replied", "💬 Customer replied"));
   meta.appendChild(st);
   top.appendChild(meta);
   card.appendChild(top);
@@ -201,21 +205,24 @@ function renderOrder(o) {
   const actions = el("div", "order-actions");
   const confirmBtn = el("button", "btn-confirm", "✔ Confirm");
   const rejectBtn = el("button", "btn-red", "✖ Reject");
-  confirmBtn.disabled = rejectBtn.disabled = !active;
+  confirmBtn.disabled = !active;            // locked while waiting for the customer's reply
+  rejectBtn.disabled = !(active || waiting); // reject still allowed if the customer never answers
   confirmBtn.onclick = () => { drafts[o.id] = { type: "confirm", value: isoDay(1) }; loadOrders(true); };
   rejectBtn.onclick = () => { drafts[o.id] = { type: "reject", value: "" }; loadOrders(true); };
   actions.append(confirmBtn, rejectBtn);
 
-  // Orders where something was replaced/missing get a "View chat" button for a human check
-  if (trouble) {
+  // Orders where something was replaced/missing (or a conversation is going on) get a "View chat" button
+  if (trouble || waiting || o.customer_replied) {
     const chatBtn = el("button", "btn-chat", "💬 View chat");
-    chatBtn.onclick = () => openChat(o.buyer_name);
+    chatBtn.onclick = () => openChat(o.buyer_name, o.id);
     actions.appendChild(chatBtn);
   }
+  if (waiting) actions.appendChild(el("div", "hold-note", "⏳ You asked the customer a question. Confirm unlocks when they reply."));
 
   // Inline box: delivery date (confirm) or reason (reject) — no browser popups
   const d = drafts[o.id];
-  if (active && d) actions.appendChild(d.type === "confirm" ? confirmBox(o.id, d) : rejectBox(o.id, d));
+  if (d && d.type === "confirm" && active) actions.appendChild(confirmBox(o.id, d));
+  if (d && d.type === "reject" && (active || waiting)) actions.appendChild(rejectBox(o.id, d));
   if (errors[o.id]) actions.appendChild(el("div", "error", "⚠ " + errors[o.id]));
   card.appendChild(actions);
   return card;
@@ -272,8 +279,9 @@ async function rejectOrder(id) {
 }
 
 // ---------- Chat drawer (human intervention) ----------
-function openChat(buyerName) {
+function openChat(buyerName, orderId) {
   chatBuyer = buyerName;
+  chatOrderId = orderId;
   chatCount = -1;
   $("chatTitle").textContent = `💬 ${buyerName}`;
   $("chatDrawer").classList.remove("hidden");
@@ -331,8 +339,9 @@ $("chatForm").addEventListener("submit", async (e) => {
   const text = $("chatInput").value.trim();
   if (!text || !chatBuyer) return;
   $("chatInput").value = "";
-  await postJson("/api/vendor/message", { buyer_name: chatBuyer, text });
-  loadChat();
+  // Sending a message puts this order on hold until the customer replies
+  await postJson("/api/vendor/message", { buyer_name: chatBuyer, text, order_id: chatOrderId });
+  refresh(true);
 });
 
 // ---------- Inventory ----------
