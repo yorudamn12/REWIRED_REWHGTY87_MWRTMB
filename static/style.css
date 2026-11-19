@@ -1,12 +1,15 @@
-/* ListLens shared styles — simple green theme */
+/* ListLens shared styles — green chat-app theme (generic, no third-party logos/art) */
 :root {
-  --green: #0b7a5a;
-  --green-dark: #075e45;
-  --buyer-bubble: #d9fdd3;
-  --bot-bubble: #ffffff;
-  --chat-bg: #ece5dd;
-  --text: #1f2a2e;
+  --green: #008069;        /* header green */
+  --green-dark: #006b58;
+  --accent: #00a884;       /* send button, links */
+  --buyer-bubble: #d9fdd3; /* outgoing bubble */
+  --bot-bubble: #ffffff;   /* incoming bubble */
+  --chat-bg: #efeae2;      /* chat wallpaper colour */
+  --text: #111b21;
   --muted: #667781;
+  --tick: #53bdeb;         /* "read" ticks */
+  --reply-btn: #027eb5;    /* quick-reply button text */
   --red: #d93025;
   --amber: #e8a400;
   --border: #e2e2e2;
@@ -16,136 +19,287 @@
 
 body {
   margin: 0;
-  font-family: "Segoe UI", Roboto, Arial, sans-serif;
+  font-family: "Segoe UI", "Helvetica Neue", Roboto, Arial, sans-serif;
   color: var(--text);
-  background: #f4f6f5;
+  background: #d1d7db;
   font-size: 15px;
 }
 
 button { font: inherit; cursor: pointer; }
-button:disabled { cursor: default; opacity: 0.55; }
+button:disabled { cursor: default; }
 
 .mock-badge {
   background: var(--amber);
   color: #000;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 10px;
-  margin-left: 8px;
+  margin-left: 6px;
   vertical-align: middle;
 }
 .hidden { display: none !important; }
 
-/* ---------------- Buyer chat page ---------------- */
+/* ================= Buyer chat page ================= */
 .phone {
   max-width: 420px;
   height: 100vh;
+  height: 100dvh;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  background: var(--chat-bg);
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.12);
+  background-color: var(--chat-bg);
+  /* Subtle dotted wallpaper drawn in CSS (no image files) */
+  background-image:
+    radial-gradient(rgba(0, 0, 0, 0.045) 1.2px, transparent 1.3px),
+    radial-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1.1px);
+  background-size: 22px 22px, 22px 22px;
+  background-position: 0 0, 11px 11px;
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.18);
+  position: relative;
 }
 
+/* ---- Header ---- */
 .chat-header {
   background: var(--green);
   color: #fff;
-  padding: 12px 16px;
+  padding: 8px 6px 8px 4px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
+  min-height: 60px;
+  flex-shrink: 0;
 }
+.icon-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+.icon-btn svg { width: 22px; height: 22px; fill: currentColor; }
 .avatar {
   width: 40px; height: 40px;
   border-radius: 50%;
-  background: #fff;
+  background: #dfe5e7;
   color: var(--green);
   font-weight: 700;
+  font-size: 15px;
   display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
-.chat-header .title { font-weight: 600; font-size: 16px; }
-.chat-header .sub { font-size: 12px; opacity: 0.85; }
+.header-text { flex: 1; min-width: 0; margin-left: 4px; }
+.chat-header .title {
+  font-weight: 500; font-size: 17px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chat-header .sub { font-size: 13px; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* ---- First-time sign-up card ---- */
 .signup {
-  padding: 24px;
+  margin: 24px 16px;
+  padding: 20px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
-.signup input, .bottom-bar input[type=text] {
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+.signup input {
+  padding: 10px 2px;
+  border: none;
+  border-bottom: 2px solid var(--accent);
   font: inherit;
+  outline: none;
 }
 .btn-green {
-  background: var(--green);
+  background: var(--accent);
   color: #fff;
   border: none;
-  border-radius: 8px;
-  padding: 10px 14px;
+  border-radius: 20px;
+  padding: 10px 16px;
+  font-weight: 500;
 }
 .btn-green:hover:not(:disabled) { background: var(--green-dark); }
+.btn-green:disabled { opacity: 0.55; }
 
+/* ---- Message list ---- */
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 8px 12px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
-.bubble {
-  max-width: 85%;
-  padding: 8px 10px;
+/* Centered chips: "TODAY", info notes */
+.chip {
+  align-self: center;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12.5px;
+  padding: 5px 12px;
   border-radius: 8px;
-  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+  margin: 8px 0;
+  box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
+  text-align: center;
+}
+.chip.info { background: #ffeecd; color: #54656f; max-width: 85%; }
+
+/* Each bubble sits in a row so we can align it left or right */
+.row { display: flex; margin-top: 2px; }
+.row.buyer { justify-content: flex-end; }
+.row.bot { justify-content: flex-start; }
+.row.first { margin-top: 10px; } /* small gap when the sender changes */
+
+.bubble {
+  position: relative;
+  max-width: 85%;
+  padding: 6px 7px 8px 9px;
+  border-radius: 7.5px;
+  box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
+  font-size: 14.2px;
+  line-height: 19px;
   white-space: pre-wrap;
   word-wrap: break-word;
 }
-.bubble.buyer { align-self: flex-end; background: var(--buyer-bubble); }
-.bubble.bot { align-self: flex-start; background: var(--bot-bubble); }
-.bubble .time { font-size: 11px; color: var(--muted); text-align: right; margin-top: 4px; }
-.bubble img { max-width: 220px; border-radius: 6px; display: block; }
+.bubble.buyer { background: var(--buyer-bubble); }
+.bubble.bot { background: var(--bot-bubble); }
 
-.summary-table { border-collapse: collapse; width: 100%; font-size: 14px; white-space: normal; }
-.summary-table td { padding: 3px 6px; border-bottom: 1px solid #f0f0f0; }
-.summary-table td.num { text-align: right; }
+/* Little "tail" on the first bubble of a group */
+.row.first .bubble.buyer { border-top-right-radius: 0; }
+.row.first .bubble.bot { border-top-left-radius: 0; }
+.row.first .bubble::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 0; height: 0;
+  border-top: 10px solid;
+}
+.row.first .bubble.buyer::before {
+  right: -8px;
+  border-top-color: var(--buyer-bubble);
+  border-right: 8px solid transparent;
+}
+.row.first .bubble.bot::before {
+  left: -8px;
+  border-top-color: var(--bot-bubble);
+  border-left: 8px solid transparent;
+}
+
+/* Time + ticks, tucked at the bottom-right of the bubble */
+.meta {
+  float: right;
+  font-size: 11px;
+  color: var(--muted);
+  margin: 6px 0 -6px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  line-height: 15px;
+}
+.meta svg { width: 16px; height: 11px; }
+
+/* Image bubble: thin frame, time drawn over the photo */
+.bubble.image { padding: 3px; }
+.bubble.image img { display: block; width: 240px; max-height: 320px; object-fit: cover; border-radius: 6px; }
+.bubble.image .meta {
+  position: absolute;
+  right: 8px; bottom: 6px;
+  margin: 0;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* Order summary inside a bubble */
+.summary-title { font-weight: 600; margin-bottom: 4px; }
+.summary-table { border-collapse: collapse; width: 100%; font-size: 13.5px; white-space: normal; }
+.summary-table td { padding: 4px 4px; border-bottom: 1px solid #eef0f1; }
+.summary-table td.num { text-align: right; white-space: nowrap; color: #3b4a54; }
 .summary-total { font-weight: 700; margin-top: 6px; text-align: right; }
 
-.choice-buttons { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+/* Choice: quick-reply buttons stacked under the text, full bubble width */
+.choice-buttons { margin: 8px -7px -8px -9px; }
 .choice-buttons button {
-  background: #fff;
-  border: 1px solid var(--green);
-  color: var(--green);
-  border-radius: 18px;
-  padding: 7px 10px;
-  text-align: left;
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  border-top: 1px solid #e9edef;
+  color: var(--reply-btn);
+  padding: 10px 12px;
+  font-size: 14px;
+  text-align: center;
 }
-.choice-buttons button:hover:not(:disabled) { background: #e8f5ef; }
-.chosen { margin-top: 6px; font-weight: 600; color: var(--green); }
+.choice-buttons button:hover:not(:disabled) { background: #f5f6f6; }
+.choice-buttons button:disabled { color: #8696a0; }
+.choice-buttons button.picked { color: var(--accent); font-weight: 600; }
+.choice-buttons button.picked::before { content: "✓ "; }
+.choice-bubble { min-width: 240px; }
 
-.typing { font-style: italic; color: var(--muted); }
+/* Typing indicator: three bouncing dots */
+.typing-dots { display: inline-flex; gap: 4px; padding: 4px 2px; }
+.typing-dots span {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #8696a0;
+  animation: bounce 1.2s infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.6; } 30% { transform: translateY(-4px); opacity: 1; } }
 
+/* ---- Bottom input bar ---- */
 .bottom-bar {
   display: flex;
-  gap: 8px;
-  padding: 8px;
-  background: #f0f0f0;
+  gap: 6px;
+  padding: 6px 8px 8px;
   align-items: center;
+  flex-shrink: 0;
 }
-.attach-btn {
+.input-pill {
+  flex: 1;
+  min-width: 0;
   background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  width: 42px; height: 42px;
-  font-size: 20px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  padding: 4px 6px;
+  min-height: 48px;
+  box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
+  cursor: pointer;
 }
-.file-name { flex: 1; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.input-pill .icon-btn { color: #8696a0; }
+.input-pill .icon-btn svg { width: 24px; height: 24px; }
+.file-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  color: #8696a0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
+}
+.file-name.has-file { color: var(--text); }
+.send-btn {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.send-btn svg { width: 22px; height: 22px; fill: currentColor; margin-left: 2px; }
+.send-btn:disabled { background: #8fd6c4; }
 
-/* ---------------- Vendor dashboard ---------------- */
+/* ================= Vendor dashboard ================= */
 .vendor-header {
   background: var(--green);
   color: #fff;
@@ -154,6 +308,7 @@ button:disabled { cursor: default; opacity: 0.55; }
   font-weight: 600;
 }
 .vendor-header .sub { font-size: 13px; font-weight: 400; opacity: 0.85; }
+body.vendor { background: #f0f2f5; }
 
 .vendor-layout { display: flex; gap: 20px; padding: 20px; align-items: flex-start; }
 .orders-col { width: 60%; display: flex; flex-direction: column; gap: 16px; }
@@ -190,8 +345,10 @@ table.data td.num, table.data th.num { text-align: right; }
 
 .order-total { text-align: right; font-weight: 700; font-size: 16px; margin-top: 10px; }
 .order-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
+.order-actions .btn-green { border-radius: 8px; }
 .btn-red { background: #fff; color: var(--red); border: 1px solid var(--red); border-radius: 8px; padding: 9px 14px; }
 .btn-red:hover:not(:disabled) { background: #fdecea; }
+.btn-red:disabled { opacity: 0.5; }
 .reject-box { display: flex; gap: 8px; width: 100%; }
 .reject-box input { flex: 1; padding: 8px; border: 1px solid var(--border); border-radius: 8px; font: inherit; }
 .error { color: var(--red); font-size: 13px; width: 100%; }

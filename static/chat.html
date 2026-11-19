@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#008069">
+  <title>Sharma General Store — Chat</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="phone">
+  <!-- Header: back arrow, avatar, store name, status, call icons (decorative) -->
+  <div class="chat-header">
+    <button class="icon-btn" title="Back">
+      <svg viewBox="0 0 24 24"><path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z"/></svg>
+    </button>
+    <div class="avatar">SG</div>
+    <div class="header-text">
+      <div class="title">Sharma General Store</div>
+      <div class="sub"><span id="headerSub">online</span><span id="mockBadge" class="mock-badge hidden">MOCK MODE</span></div>
+    </div>
+    <button class="icon-btn" title="Video call">
+      <svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11z"/></svg>
+    </button>
+    <button class="icon-btn" title="Call">
+      <svg viewBox="0 0 24 24"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg>
+    </button>
+    <button class="icon-btn" title="Menu">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+    </button>
+  </div>
+
+  <!-- First-time form: name + flat -->
+  <form id="signup" class="signup hidden">
+    <h3 style="margin:0">Welcome! 👋</h3>
+    <div style="color:#54656f">Tell the store who you are, then send a photo or screenshot of your grocery list.</div>
+    <input id="nameInput" placeholder="Your name (e.g. Priya)" required>
+    <input id="flatInput" placeholder="Flat number (e.g. B-204)" required>
+    <button class="btn-green" type="submit">Start chatting</button>
+  </form>
+
+  <!-- Chat messages -->
+  <div id="messages" class="messages hidden">
+    <div class="chip">TODAY</div>
+    <div class="chip info">📷 Send a photo or screenshot of your grocery list. We'll check stock and prepare your order.</div>
+  </div>
+
+  <!-- Bottom bar: the whole pill opens the photo picker; round green button sends -->
+  <div id="bottomBar" class="bottom-bar hidden">
+    <div class="input-pill" id="attachPill" title="Attach image">
+      <span class="icon-btn">
+        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm-3.5-9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm7 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM12 17.5c2.3 0 4.3-1.5 5-3.5H7c.7 2 2.7 3.5 5 3.5z"/></svg>
+      </span>
+      <div class="file-name" id="fileName">Attach list photo</div>
+      <span class="icon-btn">
+        <svg viewBox="0 0 24 24"><path d="M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6H10v9.5a2.5 2.5 0 0 0 5 0V5a4 4 0 0 0-8 0v12.5a5.5 5.5 0 0 0 11 0V6z"/></svg>
+      </span>
+      <span class="icon-btn">
+        <svg viewBox="0 0 24 24"><path d="M12 8.8a3.7 3.7 0 1 0 0 7.4 3.7 3.7 0 0 0 0-7.4zM20 5h-3.2L15 3H9L7.2 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm-8 13.5a6 6 0 1 1 0-12 6 6 0 0 1 0 12z"/></svg>
+      </span>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" hidden>
+    <button class="send-btn" id="sendBtn" title="Send" disabled>
+      <svg viewBox="0 0 24 24"><path d="M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z"/></svg>
+    </button>
+  </div>
+</div>
+
+<script>
+// ---------- State ----------
+let buyer = JSON.parse(localStorage.getItem("listlens_buyer") || "null"); // {name, flat}
+let lastId = 0;          // id of the last message we have shown
+let lastSender = null;   // used to draw the bubble "tail" only on the first bubble of a group
+let typingEl = null;     // the typing-dots bubble while uploading
+
+const messagesEl = document.getElementById("messages");
+const fileInput = document.getElementById("fileInput");
+const sendBtn = document.getElementById("sendBtn");
+const fileNameEl = document.getElementById("fileName");
+const headerSub = document.getElementById("headerSub");
+
+// Blue double-tick icon shown on the buyer's own messages
+const TICKS = '<svg viewBox="0 0 16 11"><path d="M1 6l3 3 6-7M6.5 9.5l.8.8L14 2" fill="none" stroke="#53bdeb" stroke-width="1.6"/></svg>';
+
+// Show the MOCK MODE badge if the server is in mock mode
+fetch("/api/config").then(r => r.json()).then(cfg => {
+  if (cfg.mode === "mock") document.getElementById("mockBadge").classList.remove("hidden");
+});
+
+// ---------- Sign up (first time only) ----------
+document.getElementById("signup").addEventListener("submit", (e) => {
+  e.preventDefault();
+  buyer = {
+    name: document.getElementById("nameInput").value.trim(),
+    flat: document.getElementById("flatInput").value.trim(),
+  };
+  localStorage.setItem("listlens_buyer", JSON.stringify(buyer));
+  startChat();
+});
+
+function startChat() {
+  document.getElementById("signup").classList.add("hidden");
+  messagesEl.classList.remove("hidden");
+  document.getElementById("bottomBar").classList.remove("hidden");
+  poll();
+  setInterval(poll, 2000); // check for new messages every 2 seconds
+}
+
+// ---------- Polling ----------
+async function poll() {
+  const res = await fetch(`/api/messages?buyer=${encodeURIComponent(buyer.name)}&after=${lastId}`);
+  const msgs = await res.json();
+  for (const m of msgs) {
+    if (m.id <= lastId) continue; // already shown
+    renderMessage(m);
+    lastId = m.id;
+  }
+  if (msgs.length) scrollDown();
+}
+
+// ---------- Rendering ----------
+function renderMessage(m) {
+  // A "row" holds one bubble and aligns it left (bot) or right (buyer)
+  const row = document.createElement("div");
+  row.className = `row ${m.sender}`;
+  if (m.sender !== lastSender) row.classList.add("first"); // first in group -> gets a tail
+  lastSender = m.sender;
+
+  const bubble = document.createElement("div");
+  bubble.className = `bubble ${m.sender}`;
+  const p = m.payload;
+
+  if (m.type === "text") {
+    bubble.appendChild(document.createTextNode(p.text));
+  } else if (m.type === "image") {
+    bubble.classList.add("image");
+    const img = document.createElement("img");
+    img.src = p.url;
+    img.onload = scrollDown; // images load later, so scroll again when ready
+    bubble.appendChild(img);
+  } else if (m.type === "summary") {
+    renderSummary(bubble, p);
+  } else if (m.type === "choice") {
+    renderChoice(bubble, p);
+  }
+
+  // Time (e.g. 13:02) + blue ticks for the buyer's messages
+  const meta = document.createElement("span");
+  meta.className = "meta";
+  meta.innerHTML = m.created_at.slice(11, 16) + (m.sender === "buyer" ? TICKS : "");
+  if (m.type === "choice") bubble.insertBefore(meta, bubble.querySelector(".choice-buttons"));
+  else bubble.appendChild(meta);
+
+  row.appendChild(bubble);
+  messagesEl.appendChild(row);
+  if (typingEl) messagesEl.appendChild(typingEl); // keep the typing bubble at the bottom
+}
+
+function renderSummary(bubble, p) {
+  const title = document.createElement("div");
+  title.className = "summary-title";
+  title.textContent = "🧾 Here's what we have for you";
+  bubble.appendChild(title);
+
+  const table = document.createElement("table");
+  table.className = "summary-table";
+  for (const it of p.items) {
+    const row = table.insertRow();
+    row.insertCell().textContent = it.name;
+    const q = row.insertCell(); q.textContent = `x${it.qty}`; q.className = "num";
+    const pr = row.insertCell(); pr.textContent = `₹${it.price}`; pr.className = "num";
+  }
+  bubble.appendChild(table);
+
+  const total = document.createElement("div");
+  total.className = "summary-total";
+  total.textContent = `Total so far: ₹${p.total}`;
+  bubble.appendChild(total);
+}
+
+function renderChoice(bubble, p) {
+  bubble.classList.add("choice-bubble");
+  const text = document.createElement("div");
+  text.textContent = "⚠️ " + p.text;
+  bubble.appendChild(text);
+
+  // Quick-reply buttons: one per alternative, plus "Skip"
+  const box = document.createElement("div");
+  box.className = "choice-buttons";
+  const options = [...p.options.map(o => ({ id: o.item_id, label: `${o.label} — ₹${o.price}` })),
+                   { id: null, label: "Skip this item" }];
+
+  for (const opt of options) {
+    const btn = document.createElement("button");
+    btn.textContent = opt.label;
+    // Already answered (e.g. after a page reload)? Disable and highlight the pick.
+    if (p.chosen !== null) {
+      btn.disabled = true;
+      if (p.chosen === "Skipped" ? opt.id === null : p.chosen.startsWith(opt.label.split(" — ")[0])) {
+        btn.classList.add("picked");
+      }
+    }
+    btn.onclick = async () => {
+      box.querySelectorAll("button").forEach(b => b.disabled = true);
+      const res = await fetch("/api/choose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_item_id: p.order_item_id, chosen_item_id: opt.id }),
+      });
+      if (res.ok) {
+        btn.classList.add("picked");
+      } else {
+        alert("Something went wrong, please try again.");
+        box.querySelectorAll("button").forEach(b => b.disabled = false);
+      }
+      poll();
+    };
+    box.appendChild(btn);
+  }
+  bubble.appendChild(box);
+}
+
+function scrollDown() {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// ---------- Upload ----------
+document.getElementById("attachPill").onclick = () => fileInput.click();
+
+fileInput.onchange = () => {
+  const file = fileInput.files[0];
+  fileNameEl.textContent = file ? "📷 " + file.name : "Attach list photo";
+  fileNameEl.classList.toggle("has-file", !!file);
+  sendBtn.disabled = !file;
+};
+
+sendBtn.onclick = async () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  sendBtn.disabled = true;
+
+  // Show "typing..." in the header and a bouncing-dots bubble while the server reads the list
+  headerSub.textContent = "typing…";
+  typingEl = document.createElement("div");
+  typingEl.className = "row bot first";
+  typingEl.innerHTML = '<div class="bubble bot"><span class="typing-dots"><span></span><span></span><span></span></span> <i style="color:#667781">Reading your list...</i></div>';
+  messagesEl.appendChild(typingEl);
+  scrollDown();
+
+  const form = new FormData();
+  form.append("image", file);
+  form.append("buyer_name", buyer.name);
+  form.append("flat", buyer.flat);
+  try {
+    await fetch("/api/upload", { method: "POST", body: form });
+  } catch (e) {
+    alert("Upload failed. Is the server running?");
+  }
+
+  typingEl.remove();
+  typingEl = null;
+  headerSub.textContent = "online";
+  fileInput.value = "";
+  fileNameEl.textContent = "Attach list photo";
+  fileNameEl.classList.remove("has-file");
+  lastSender = null; // next bot message after the typing bubble starts a new group
+  await poll();
+};
+
+// ---------- Start ----------
+if (buyer) startChat();
+else document.getElementById("signup").classList.remove("hidden");
+</script>
+</body>
+</html>
